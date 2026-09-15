@@ -1,0 +1,25 @@
+{
+  "lastChangelogVersion": "0.85.1",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.6-terra",
+  "defaultThinkingLevel": "medium",
+  "enabledModels": [
+    "openai-codex/gpt-5.6-luna",
+    "openai-codex/gpt-5.6-sol",
+    "openai-codex/gpt-5.6-terra",
+    "openai-codex/gpt-6-astra"
+  ],
+  "hideThinkingBlock": false,
+  "terminal": {
+    "showTerminalProgress": true
+  },
+  "quietStartup": false,
+  "collapseChangelog": false,
+  "enableInstallTelemetry": false,
+  "treeFilterMode": "no-tools",
+  "theme": "light/dark",
+  "compaction": {
+    "enabled": false
+  },
+  "tuiMode": "regular"
+}
