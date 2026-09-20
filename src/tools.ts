@@ -39,6 +39,7 @@ const ALLOWED_TOOLS = [
 	"issues",
 	"snapshot",
 	"todo",
+	"prepare_commit",
 ] as const;
 
 type CheckedToolName = (typeof CHECKED_TOOLS)[number];
