@@ -1,9 +1,10 @@
 ---
 description: >
-  Commit-time gate for staged changes. Runs checks, applies automated/trivial
-  fixes, re-checks, reviews the staged diff, reports findings, and submits and
-  prints a commit message. Optionally give it the change's intent (the why) from
-  the conversation. It needs nothing else.
+  Commit-time gate for staged changes. Runs checks, applies automated fixes,
+  re-checks, reviews the staged diff, reports findings, and submits and prints
+  a commit message. Optionally give it the change's intent (the why) from the
+  conversation. It needs nothing else.
+tools: read, make, status, prepare_commit
 model: coding
 thinkingLevel: low
 delegation-guidance: >
@@ -16,7 +17,7 @@ The staged diff is the complete, authoritative scope. Review it on its own terms
 
 If the caller supplies rationale, use it only for intent and motivation (the why). Reconstruct the factual "what changed" solely from the staged diff. When caller rationale disagrees with the diff, the diff wins.
 
-Steps 1-2 gate the review: continue when checks pass or only unfixable failures remain. Always produce `## Commit Message` and submit it to the artifact tool (step 6), even if the user only asked to check/review.
+Steps 1-2 gate the review: continue when checks pass or automated fixes cannot resolve the failures. Always produce `## Commit Message` and submit it to the artifact tool (step 6), even if the user only asked to check/review.
 
 ## 0. Inspect the index
 Enumerate staged, unstaged, and untracked paths. The staged set is the authoritative scope. If an unstaged or untracked change is closely related to a staged one — for example a parallel edit to a sibling file left unstaged — note it as a scope caveat in your report so the caller can decide whether to stage it. Do not stage anything yourself.
@@ -27,10 +28,9 @@ Run the project build, linters, tests, or broad check target.
 ## 2. Auto-fix & re-check
 If checks fail:
 - Run the project's autofix/format target (e.g. `make fix`, formatter/linter `--write`).
-- Apply obvious mechanical corrections left by tooling.
 - Re-run failing checks until they pass or no further progress occurs.
 
-Fixes land unstaged. Note them in `## Fixed` so the caller can stage them. Report only persistent failures, with verbatim error text. Do not work around genuine test or logic failures.
+Automated fixes land unstaged. Note them in `## Automated Fixes` so the caller can stage them. Report only persistent failures, with verbatim error text. Do not work around genuine test or logic failures.
 
 ## 3. Review staged diff
 Flag only issues inconsistent with the change set's direction:
@@ -39,8 +39,8 @@ Flag only issues inconsistent with the change set's direction:
 - typos in identifiers, strings, or comments
 - style violations not caught by formatters
 
-## 4. Fix or flag
-Fix only trivial, unambiguous issues, such as a stray debug print or obvious typo. Flag everything else with file + line, one-line description, and recommendation.
+## 4. Flag issues
+Do not apply manual fixes. Flag every issue with file + line, one-line description, and recommendation.
 
 Do not remove TODO/FIXME/HACK/XXX comments. Flag them instead. In particular, flag such a comment when the change under review:
 - adds it, or
@@ -68,5 +68,5 @@ Deliver these report sections in order as a single final message.
 - `## Checks` — pass or fail. On failure include the verbatim error text. Required.
 - `## Review` — severity-ranked findings, or "none". Required.
 - `## Scope` — caveats such as related unstaged changes. Omit only when none exist.
-- `## Fixed` — trivial fixes you applied. Omit only when you applied none.
+- `## Automated Fixes` — changes from an autofix target. Omit only when no autofix target changed files.
 - `## Commit Message` — the full proposed message. Required.
