@@ -89,6 +89,7 @@ const HIDDEN_PATH_ALLOWLIST_BASES = [
 	path.resolve(agentDir, "skills"),
 	path.resolve(agentDir, "extensions"),
 	path.resolve(agentDir, "agents"),
+	"stow/pi/.pi/", // local pi customization source
 	".scratch", // temporary files globally ignored by git
 ];
 
