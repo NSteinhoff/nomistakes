@@ -1,11 +1,9 @@
 /**
  * Discussion mode extension.
  *
- * Planning turns use a readonly tool loadout. The mode stays ephemeral and
- * defaults to enabled for every session start.
+ * Runtime authorization keeps tools and system guidance constant across modes.
  */
 
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type {
 	BeforeAgentStartEvent,
 	ExtensionAPI,
@@ -14,7 +12,6 @@ import type {
 import { Key } from "@earendil-works/pi-tui";
 
 const STATUS_ID = "discussion";
-const NOTE_TYPE = "discussion-note";
 const BLOCKED_TOOLS = new Set<string>([
 	"edit",
 	"write",
@@ -25,10 +22,10 @@ const BLOCKED_TOOLS = new Set<string>([
 const IMPLEMENTATION_TURN_PREFIXES = ["Implement", "Fix"];
 const IMPLEMENTATION_TURN_SUFFIXES = ["Go!", "Do it!", "Make it so!"];
 const DISCUSSION_GUIDANCE = [
-	"Discussion mode is enabled.",
-	"",
-	"Discuss, analyze, and plan. Do not implement changes or invoke mutating tools",
-	"unless the current user message carries an authorization prefix or suffix.",
+	"Discussion mode defaults to enabled. The user can toggle it with /discussion.",
+	"While enabled, propose changes in prose. Do not implement changes or invoke",
+	"mutating tools unless the current user message carries an authorization",
+	"prefix or suffix. Subagent delegation is allowed.",
 	"",
 	"Prefixes:",
 	...IMPLEMENTATION_TURN_PREFIXES.map((prefix) => `- ${prefix}`),
@@ -40,7 +37,9 @@ const DISCUSSION_GUIDANCE = [
 	"carries the token and never persists to later turns. A prior authorization",
 	"does not license edits in a subsequent turn, even a directly related one.",
 	"",
-	"Without authorization, propose changes in prose.",
+	"Restricted tool calls return a refusal message while discussion mode is",
+	"enabled and the current turn lacks authorization. When the user disables",
+	"discussion mode, this restriction does not apply.",
 ].join("\n");
 
 function isImplementationTurn(event: BeforeAgentStartEvent): boolean {
@@ -61,6 +60,7 @@ function isImplementationTurn(event: BeforeAgentStartEvent): boolean {
 
 export default function discussionMode(pi: ExtensionAPI): void {
 	let enabled = true;
+	let implementationTurn = false;
 
 	function updateStatus(ctx: ExtensionContext): void {
 		ctx.ui.setStatus(
@@ -74,47 +74,41 @@ export default function discussionMode(pi: ExtensionAPI): void {
 		updateStatus(ctx);
 		ctx.ui.notify(
 			enabled
-				? "Discussion mode enabled. Write tools are unavailable on planning turns."
-				: "Discussion mode disabled. Write tools restored.",
+				? "Discussion mode enabled. Write tools require authorization."
+				: "Discussion mode disabled. Write tools do not require authorization.",
 			"info",
 		);
 	}
 
-	// Discussion mode is the default: re-enable on every session start so resume,
-	// reload, and new sessions all begin in planning-only mode.
 	pi.on("session_start", async (_event, ctx) => {
 		enabled = true;
+		implementationTurn = false;
 		updateStatus(ctx);
 	});
 
-	pi.on("before_agent_start", async (event) => {
-		if (enabled && !isImplementationTurn(event)) {
-			event.systemPromptOptions.selectedTools =
-				event.systemPromptOptions.selectedTools.filter(
-					(toolName) => !BLOCKED_TOOLS.has(toolName),
-				);
-			event.systemPromptOptions.sections["discussion-mode"] =
-				DISCUSSION_GUIDANCE;
+	pi.on("tool_call", async (event) => {
+		if (!enabled || implementationTurn || !BLOCKED_TOOLS.has(event.toolName)) {
 			return;
 		}
 
-		delete event.systemPromptOptions.sections["discussion-mode"];
-		pi.setActiveTools(event.systemPromptOptions.selectedTools);
-	});
-
-	// Exclude notes injected by earlier extension versions from every context.
-	pi.on("context", async (event) => {
 		return {
-			messages: event.messages.filter(
-				(message) =>
-					(message as AgentMessage & { customType?: string }).customType !==
-					NOTE_TYPE,
-			),
+			block: true,
+			reason: `[DISCUSSION MODE] The '${event.toolName}' tool requires authorization for this turn. Propose the change in prose instead.`,
 		};
 	});
 
+	pi.on("before_agent_start", async (event) => {
+		implementationTurn = isImplementationTurn(event);
+		event.systemPromptOptions.sections["discussion-mode"] = DISCUSSION_GUIDANCE;
+	});
+
+	pi.on("agent_end", async () => {
+		implementationTurn = false;
+	});
+
 	pi.registerCommand("discussion", {
-		description: "Toggle discussion mode (use readonly tools during planning)",
+		description:
+			"Toggle discussion mode (require authorization for write tools)",
 		handler: async (_args, ctx) => toggle(ctx),
 	});
 

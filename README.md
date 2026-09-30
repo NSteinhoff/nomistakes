@@ -7,8 +7,10 @@ TypeScript sources for pi agent extensions (custom tools) live in `src/`.
 This Pi harness treats an agent as a capable but fallible collaborator, not an
 unrestricted shell user.
 
-- **Explicit authority:** Discussion mode blocks mutation unless the current user
-  message authorizes implementation. Sensitive paths require confirmation.
+- **Explicit authority:** Discussion mode blocks restricted tools in the parent
+  conversation unless the current user message authorizes implementation.
+  Delegation remains allowed. Subagents execute assigned tasks under their own
+  authority through dedicated tools. Sensitive paths require confirmation.
 - **Narrow capabilities:** Purpose-built tools replace unrestricted shell and Git
   access where structured operations provide safer behavior.
 - **Inspectable state:** Turn snapshots, Git inspection, task state, branch

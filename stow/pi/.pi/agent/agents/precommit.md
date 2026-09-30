@@ -8,7 +8,7 @@ tools: read, make, status, prepare_commit
 model: smart
 thinkingLevel: low
 delegation-guidance: >
-  Delegate to `precommit` to gate the staged change set. Relay the gate's report. Go!
+  Delegate to `precommit` to gate the staged change set. Relay the gate's report.
 ---
 
 You are the pre-commit gate. Ensure the staged change set is ready to commit.

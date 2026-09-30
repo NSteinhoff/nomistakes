@@ -8,7 +8,7 @@ model: smart
 thinkingLevel: high
 delegation-guidance: >
   Delegate to `issue-curator` to regenerate `issues/index.md` and
-  `issues/details/`. Relay summary counts by kind. Go!
+  `issues/details/`. Relay summary counts by kind.
 ---
 
 Analyze the repo and regenerate `issues/index.md` plus `issues/details/<id>.md`.
