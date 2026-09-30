@@ -6,14 +6,14 @@
  * - Nested subagents are rejected.
  * - Hard deadlines request abort; the tool waits for in-process work to settle
  *   before returning.
- * - Agents and tier aliases fail loudly on malformed configuration.
+ * - Agents fail loudly on malformed configuration.
  *
  * Agent definitions live in `<agentDir>/agents/<name>.md`. The body is the
  * agent system prompt; the YAML frontmatter is validated by
  * AgentFrontmatterSchema and supports these fields:
  * - description (string, required): agent role shown in the `delegate` tool.
  * - tools (string | string[]): comma-separated string or array of tool names.
- * - model (string): model id or tier alias; inherits the caller's when absent.
+ * - model (string): catalog model id; inherits the caller's when absent.
  * - thinkingLevel (enum): one of THINKING_LEVELS (case-sensitive).
  * - disabled (boolean | string): truthy excludes the agent from the registry.
  *
@@ -513,7 +513,6 @@ async function runSubagent({
 	cwd,
 	fallbackModel,
 	modelRegistry,
-	tierAliases,
 	activeTools,
 	signal,
 	onUpdate,
@@ -652,12 +651,7 @@ async function runSubagent({
 	activity.appendEvent("STARTED", "task");
 	emitUpdate("starting");
 	try {
-		const model = resolveAgentModel(
-			agent.model,
-			fallbackModel,
-			modelRegistry,
-			tierAliases,
-		);
+		const model = resolveAgentModel(agent.model, fallbackModel, modelRegistry);
 		const agentDir = getAgentDir();
 		const settingsManager = SettingsManager.create(cwd, agentDir);
 		const resourceLoader = new DefaultResourceLoader({
@@ -871,7 +865,6 @@ interface ExecuteSubagentArgs {
 	cwd: string;
 	fallbackModel: Model<Api> | undefined;
 	modelRegistry: ModelRegistry;
-	tierAliases: TierAliasMap;
 	activeTools: string[];
 	signal?: AbortSignal;
 	onUpdate?: (partialResult: {
@@ -1003,10 +996,6 @@ function formatPrefixedOutput(
 
 function failAgent(filePath: string, reason: string): never {
 	throw new Error(`Invalid subagent definition ${filePath}: ${reason}`);
-}
-
-function failTierConfig(filePath: string, reason: string): never {
-	throw new Error(`Invalid subagent tier config ${filePath}: ${reason}`);
 }
 
 type ParseAgentToolsResult =
@@ -1203,44 +1192,13 @@ function resolveAgentTools(
 	return { tools, unavailableTools, nestedSubagentRequested };
 }
 
-type TierAliasMap = Record<string, Record<string, string>>;
-
 function resolveAgentModel(
 	agentModel: string | undefined,
 	fallbackModel: Model<Api> | undefined,
 	modelRegistry: ModelRegistry,
-	tierAliases: TierAliasMap = {},
 ): Model<Api> | undefined {
 	if (!agentModel) {
 		return fallbackModel;
-	}
-
-	// Tier alias: bare name (no provider prefix) resolved against the inherited
-	// provider's tier map. Keeps the subagent on the same provider as the main
-	// conversation rather than implicitly switching.
-	if (!agentModel.includes("/") && fallbackModel) {
-		const providerTiers = tierAliases[fallbackModel.provider];
-		const aliasedId = providerTiers?.[agentModel];
-		if (aliasedId) {
-			const aliased = modelRegistry.find(fallbackModel.provider, aliasedId);
-			if (!aliased) {
-				throw new Error(
-					`Tier alias "${agentModel}" for provider "${fallbackModel.provider}" points to unknown model "${aliasedId}".`,
-				);
-			}
-
-			return aliased;
-		}
-		// Tier configured for other providers but not this one: signal clearly
-		// instead of falling through to a confusing "unknown model" error.
-		const configuredForOtherProvider = Object.values(tierAliases).some(
-			(tiers) => tiers && agentModel in tiers,
-		);
-		if (configuredForOtherProvider) {
-			throw new Error(
-				`Tier alias "${agentModel}" is not configured for provider "${fallbackModel.provider}" in subagent-tiers.json.`,
-			);
-		}
 	}
 
 	const byScopedId = agentModel.includes("/")
@@ -1268,95 +1226,8 @@ function resolveAgentModel(
 		}
 	}
 	throw new Error(
-		`Unknown agent model: ${agentModel}. Use provider/modelId, a configured tier alias, or ensure model exists for inherited provider.`,
+		`Unknown agent model: ${agentModel}. Use provider/modelId or ensure the model exists for the inherited provider.`,
 	);
-}
-
-function getTierConfigPath(): string {
-	return path.join(getAgentDir(), "subagent-tiers.json");
-}
-
-function loadTierAliases(filePath: string = getTierConfigPath()): TierAliasMap {
-	// Optional config: absence is not a misconfiguration.
-	if (!fs.existsSync(filePath)) return {};
-	let raw: string;
-	try {
-		raw = fs.readFileSync(filePath, "utf-8");
-	} catch (error) {
-		failTierConfig(
-			filePath,
-			`unreadable: ${error instanceof Error ? error.message : String(error)}`,
-		);
-	}
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (error) {
-		failTierConfig(
-			filePath,
-			`invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
-		);
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		failTierConfig(filePath, "root must be a JSON object of provider maps");
-	}
-	const result: TierAliasMap = {};
-	for (const [provider, tiers] of Object.entries(
-		parsed as Record<string, unknown>,
-	)) {
-		if (!tiers || typeof tiers !== "object" || Array.isArray(tiers)) {
-			failTierConfig(
-				filePath,
-				`provider "${provider}" must map to an object of tier aliases`,
-			);
-		}
-		const providerMap: Record<string, string> = {};
-		for (const [tier, modelId] of Object.entries(
-			tiers as Record<string, unknown>,
-		)) {
-			if (typeof modelId !== "string" || modelId.length === 0) {
-				failTierConfig(
-					filePath,
-					`tier "${tier}" of provider "${provider}" must be a non-empty model id string`,
-				);
-			}
-			providerMap[tier] = modelId;
-		}
-		if (Object.keys(providerMap).length === 0) {
-			failTierConfig(
-				filePath,
-				`provider "${provider}" must define at least one tier alias`,
-			);
-		}
-		result[provider] = providerMap;
-	}
-	return result;
-}
-
-// Tier aliases are structurally validated at load, but whether each alias points
-// to a model that actually exists can only be checked against the registry,
-// which is unavailable until a tool call supplies it. Validate the whole config
-// (not just the invoked alias) so a single first invocation surfaces every bad
-// target at once.
-function validateTierAliasesAgainstRegistry(
-	tierAliases: TierAliasMap,
-	modelRegistry: ModelRegistry,
-): void {
-	const offenders: string[] = [];
-	for (const [provider, tiers] of Object.entries(tierAliases)) {
-		for (const [tier, modelId] of Object.entries(tiers)) {
-			if (!modelRegistry.find(provider, modelId)) {
-				offenders.push(`${provider}.${tier} -> "${modelId}"`);
-			}
-		}
-	}
-	if (offenders.length > 0) {
-		throw new Error(
-			`Invalid subagent tier config ${getTierConfigPath()}: tier aliases reference unknown models: ${offenders.join(
-				", ",
-			)}.`,
-		);
-	}
 }
 
 function firstLine(text: string): string {
@@ -1411,14 +1282,9 @@ function registerDelegateCommands(
 
 export default function (pi: ExtensionAPI) {
 	const discoveredAgents = discoverAgents();
-	const tierAliases = loadTierAliases();
 	const formattedAgentList = discoveredAgents.map(formatAgent);
 
 	registerDelegateCommands(pi, discoveredAgents);
-	// Memoized: the live registry is stable for the session, so one successful
-	// pass is enough. A failing pass leaves this false so the next call re-checks.
-	let tierAliasesValidated = false;
-
 	pi.registerTool<typeof SubagentParams, SubagentToolDetails>({
 		name: "delegate",
 		label: "Subagent",
@@ -1436,10 +1302,6 @@ export default function (pi: ExtensionAPI) {
 		executionMode: "sequential",
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
-			if (!tierAliasesValidated) {
-				validateTierAliasesAgainstRegistry(tierAliases, ctx.modelRegistry);
-				tierAliasesValidated = true;
-			}
 			return execute({
 				agents: discoveredAgents,
 				agent: params.agent,
@@ -1447,7 +1309,6 @@ export default function (pi: ExtensionAPI) {
 				cwd: ctx.cwd,
 				fallbackModel: ctx.model,
 				modelRegistry: ctx.modelRegistry,
-				tierAliases,
 				activeTools: pi.getActiveTools(),
 				signal,
 				onUpdate,

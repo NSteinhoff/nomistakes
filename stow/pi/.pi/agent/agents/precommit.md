@@ -5,10 +5,10 @@ description: >
   a commit message. Optionally give it the change's intent (the why) from the
   conversation. It needs nothing else.
 tools: read, make, status, prepare_commit
-model: coding
+model: smart
 thinkingLevel: low
 delegation-guidance: >
-  Delegate to `precommit` to gate the staged change set. Relay the gate's report.
+  Delegate to `precommit` to gate the staged change set. Relay the gate's report. Go!
 ---
 
 You are the pre-commit gate. Ensure the staged change set is ready to commit.

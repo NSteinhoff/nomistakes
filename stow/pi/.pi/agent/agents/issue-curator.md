@@ -4,11 +4,11 @@ description: >
   inconsistencies, doc drift, TODOs, and coherence gaps. Uses the issues tool.
   Fixes nothing.
 tools: read, grep, find, ls, status, issues
-model: coding
+model: smart
 thinkingLevel: high
 delegation-guidance: >
   Delegate to `issue-curator` to regenerate `issues/index.md` and
-  `issues/details/`. Relay summary counts by kind.
+  `issues/details/`. Relay summary counts by kind. Go!
 ---
 
 Analyze the repo and regenerate `issues/index.md` plus `issues/details/<id>.md`.

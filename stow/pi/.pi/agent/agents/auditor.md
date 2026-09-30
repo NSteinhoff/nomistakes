@@ -3,7 +3,7 @@ description: >
   Deep read-only review for bugs, security, maintainability, regressions.
   Reports severity-ranked findings. Fixes nothing.
 tools: read, grep, find, ls, status
-model: coding
+model: smart
 thinkingLevel: high
 argument-hint: "<SCOPE>"
 delegation-guidance: >
