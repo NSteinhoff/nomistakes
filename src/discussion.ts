@@ -5,7 +5,6 @@
  */
 
 import type {
-	BeforeAgentStartEvent,
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
@@ -33,17 +32,17 @@ const DISCUSSION_GUIDANCE = [
 	"Suffixes:",
 	...IMPLEMENTATION_TURN_SUFFIXES.map((suffix) => `- ${suffix}`),
 	"",
-	"Authorization is per-message. It applies only to the turn whose message",
-	"carries the token and never persists to later turns. A prior authorization",
-	"does not license edits in a subsequent turn, even a directly related one.",
+	"Each user message sets authorization from its own token at delivery.",
+	"This also applies to steering and follow-up messages. A message without",
+	"a token revokes authorization from the previous message.",
 	"",
 	"Restricted tool calls return a refusal message while discussion mode is",
 	"enabled and the current turn lacks authorization. When the user disables",
 	"discussion mode, this restriction does not apply.",
 ].join("\n");
 
-function isImplementationTurn(event: BeforeAgentStartEvent): boolean {
-	const prompt = event.prompt.trim();
+function isImplementationTurn(text: string): boolean {
+	const prompt = text.trim();
 
 	if (
 		IMPLEMENTATION_TURN_PREFIXES.some((prefix) => prompt.startsWith(prefix))
@@ -98,11 +97,26 @@ export default function discussionMode(pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_agent_start", async (event) => {
-		implementationTurn = isImplementationTurn(event);
 		event.systemPromptOptions.sections["discussion-mode"] = DISCUSSION_GUIDANCE;
 	});
 
-	pi.on("agent_end", async () => {
+	pi.on("message_start", async (event) => {
+		if (event.message.role !== "user") {
+			return;
+		}
+
+		const content = event.message.content;
+		const text =
+			typeof content === "string"
+				? content
+				: content
+						.filter((part) => part.type === "text")
+						.map((part) => part.text)
+						.join("\n");
+		implementationTurn = isImplementationTurn(text);
+	});
+
+	pi.on("agent_settled", async () => {
 		implementationTurn = false;
 	});
 
