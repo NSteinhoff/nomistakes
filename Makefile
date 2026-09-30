@@ -32,6 +32,10 @@ fix:
 	$(BIOME) check --write --unsafe .
 .PHONY: fix
 
+update:
+	pi update && $(MAKE) deps && $(MAKE) check
+.PHONY: update
+
 # --------------------------------------------------------------------------- #
 #                                Dependencies                                 #
 # --------------------------------------------------------------------------- #
@@ -42,7 +46,7 @@ PACKAGES := \
 	@earendil-works/pi-agent-core:$(PI_VERSION) \
 	@earendil-works/pi-ai:$(PI_VERSION) \
 	@earendil-works/pi-tui:$(PI_VERSION) \
-	typebox:1.3.7
+	typebox:1.3.27
 
 pkg-name    = $(word 1,$(subst :, ,$1))
 pkg-version = $(word 2,$(subst :, ,$1))
