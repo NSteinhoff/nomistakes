@@ -12,11 +12,13 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { deriveSessionName, openChildSession } from "./utils/session";
+import { blockWorktreeSessionCreation } from "./utils/worktree-patch";
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("thread", {
 		description: "Spawn a new empty child session",
 		handler: async (args, ctx) => {
+			if (await blockWorktreeSessionCreation(pi, ctx)) return;
 			if (ctx.mode !== "tui") {
 				ctx.ui.notify("thread requires interactive mode", "error");
 				return;

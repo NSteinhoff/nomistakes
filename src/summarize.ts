@@ -28,6 +28,7 @@ import {
 	editAndSeedChildSession,
 	generateWithLoader,
 } from "./utils/session";
+import { blockWorktreeSessionCreation } from "./utils/worktree-patch";
 
 const SYSTEM_PROMPT = `You are a session summarization assistant. You are given the complete history of a coding-agent session, including every branch that was explored. Only user messages, the agent's text responses, and explicit decision points ("[Decision]:" lines capturing a question, its options, and the chosen answer) are included; other tool activity has been removed.
 
@@ -289,6 +290,7 @@ export default function (pi: ExtensionAPI): void {
 	pi.registerCommand("summarize", {
 		description: "Summarize the entire session, including all branches",
 		handler: async (_args, ctx) => {
+			if (await blockWorktreeSessionCreation(pi, ctx)) return;
 			if (ctx.mode !== "tui") {
 				ctx.ui.notify("summarize requires interactive mode", "error");
 				return;

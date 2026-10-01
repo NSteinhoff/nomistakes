@@ -3,7 +3,7 @@
  *
  * Invariants:
  * - Never throws on git failure; failures surface as a non-zero exitCode.
- * - stdout/stderr are buffered as raw bytes and decoded once as UTF-8.
+ * - Raw stdout remains available for byte-exact patch exports.
  */
 
 import { spawn } from "node:child_process";
@@ -14,20 +14,33 @@ export type GitResult = {
 	readonly exitCode: number;
 };
 
+type GitBytesResult = Omit<GitResult, "stdout"> & { readonly stdout: Buffer };
+
 export async function runGit(
 	args: readonly string[],
 	cwd: string,
 	signal?: AbortSignal,
 	env: Readonly<Record<string, string>> = {},
-	input?: string,
+	input?: string | Buffer,
 ): Promise<GitResult> {
-	if (signal?.aborted) return { stdout: "", stderr: "aborted", exitCode: 130 };
+	const result = await runGitBytes(args, cwd, signal, env, input);
+	return { ...result, stdout: result.stdout.toString("utf8") };
+}
 
-	return await new Promise<GitResult>((resolve) => {
+export async function runGitBytes(
+	args: readonly string[],
+	cwd: string,
+	signal?: AbortSignal,
+	env: Readonly<Record<string, string>> = {},
+	input?: string | Buffer,
+): Promise<GitBytesResult> {
+	if (signal?.aborted)
+		return { stdout: Buffer.alloc(0), stderr: "aborted", exitCode: 130 };
+
+	return await new Promise<GitBytesResult>((resolve) => {
 		const stdoutChunks: Buffer[] = [];
 		const stderrChunks: Buffer[] = [];
-		const decodeStdout = (): string =>
-			Buffer.concat(stdoutChunks).toString("utf8");
+		const collectStdout = (): Buffer => Buffer.concat(stdoutChunks);
 		const decodeStderr = (): string =>
 			Buffer.concat(stderrChunks).toString("utf8");
 		let settled = false;
@@ -39,15 +52,13 @@ export async function runGit(
 			signal,
 		});
 
-		const settle = (result: GitResult): void => {
+		const settle = (result: GitBytesResult): void => {
 			if (settled) return;
 			settled = true;
 			resolve(result);
 		};
 
-		// Buffer raw bytes and decode once. Per-chunk toString() would split a
-		// multibyte UTF-8 sequence straddling a chunk boundary into U+FFFD,
-		// corrupting patches fed back into `git apply`.
+		// Patch bytes can contain non-UTF-8 content. Preserve them without text conversion.
 		proc.stdout?.on("data", (chunk: Buffer) => {
 			stdoutChunks.push(chunk);
 		});
@@ -56,18 +67,18 @@ export async function runGit(
 		});
 		proc.on("error", (error) => {
 			if ((error as Error).name === "AbortError") {
-				settle({ stdout: decodeStdout(), stderr: "aborted", exitCode: 130 });
+				settle({ stdout: collectStdout(), stderr: "aborted", exitCode: 130 });
 				return;
 			}
 			settle({
-				stdout: decodeStdout(),
+				stdout: collectStdout(),
 				stderr: `failed to start git: ${error.message}`,
 				exitCode: 1,
 			});
 		});
 		proc.on("close", (code) => {
 			settle({
-				stdout: decodeStdout(),
+				stdout: collectStdout(),
 				stderr: decodeStderr(),
 				exitCode: code ?? 0,
 			});

@@ -12,7 +12,7 @@
  *   accumulated since the last agent edit or review, tracked by reviewBaseline.
  */
 
-import { copyFile, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
@@ -24,7 +24,12 @@ import type {
 import { keyText } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
-import { formatGitFailure, type GitResult, runGit } from "./utils/git";
+import {
+	formatGitFailure,
+	type GitResult,
+	runGit,
+	runGitBytes,
+} from "./utils/git";
 import {
 	buildExpandableOutput,
 	type ExpandableOutputDetails,
@@ -557,7 +562,8 @@ async function executeAction(
 	}
 }
 
-async function createSnapshot(
+/** Capture Git-visible content without changes to the checkout or its index. */
+export async function createSnapshot(
 	cwd: string,
 	prompt: string,
 	signal?: AbortSignal,
@@ -647,16 +653,28 @@ async function buildSnapshotCommit(
 		}
 	}
 
+	const refreshResult = await refreshSnapshotIndex(
+		repoRoot,
+		tempIndexPath,
+		signal,
+	);
+	if (refreshResult.exitCode !== 0) {
+		return {
+			ok: false,
+			error: formatGitFailure("update-index", refreshResult),
+		};
+	}
+
 	// Respect Git ignore rules: include tracked files and non-ignored untracked
 	// files while leaving ignored files outside the snapshot.
 	const addResult = await gitWithTempIndex(
-		["add", "-A"],
+		["add", "--sparse", "-A"],
 		repoRoot,
 		tempIndexPath,
 		signal,
 	);
 	if (addResult.exitCode !== 0) {
-		return { ok: false, error: formatGitFailure("add -A", addResult) };
+		return { ok: false, error: formatGitFailure("add --sparse -A", addResult) };
 	}
 
 	const treeResult = await gitWithTempIndex(
@@ -901,6 +919,65 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+async function refreshSnapshotIndex(
+	cwd: string,
+	tempIndexPath: string,
+	signal?: AbortSignal,
+): Promise<GitResult> {
+	const env = { GIT_INDEX_FILE: tempIndexPath };
+	const files = await runGitBytes(
+		["ls-files", "--stage", "-z"],
+		cwd,
+		signal,
+		env,
+	);
+	if (files.exitCode !== 0)
+		return { ...files, stdout: files.stdout.toString("utf8") };
+	const names: Buffer[] = [];
+	const presentNames: Buffer[] = [];
+	const separator = Buffer.from("\0");
+	const prefix = Buffer.from(`${cwd}${path.sep}`);
+	for (let start = 0; start < files.stdout.length; ) {
+		const end = files.stdout.indexOf(0, start);
+		if (end < 0) throw new Error("Invalid index path list from Git.");
+		const record = files.stdout.subarray(start, end);
+		start = end + 1;
+		const tab = record.indexOf(9);
+		// Unmerged entries lack stage zero. The later add resolves the private index.
+		if (tab < 0 || !record.subarray(0, tab).toString("ascii").endsWith(" 0"))
+			continue;
+		const name = record.subarray(tab + 1);
+		const indexedName = Buffer.concat([name, separator]);
+		names.push(indexedName);
+		try {
+			await lstat(Buffer.concat([prefix, name]));
+			presentNames.push(indexedName);
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+		}
+	}
+	if (names.length === 0) return { ...files, stdout: "" };
+	// Source index hints must not suppress local content in the private capture.
+	const assumeResult = await runGit(
+		["update-index", "--no-assume-unchanged", "-z", "--stdin"],
+		cwd,
+		signal,
+		env,
+		Buffer.concat(names),
+	);
+	if (assumeResult.exitCode !== 0 || presentNames.length === 0)
+		return assumeResult;
+	// Absent sparse paths remain indexed. Present paths contribute their local content.
+	return runGit(
+		["update-index", "--no-skip-worktree", "-z", "--stdin"],
+		cwd,
+		signal,
+		env,
+		Buffer.concat(presentNames),
+	);
 }
 
 async function gitWithTempIndex(
