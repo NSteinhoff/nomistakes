@@ -64,7 +64,11 @@ export default function discussionMode(pi: ExtensionAPI): void {
 	function updateStatus(ctx: ExtensionContext): void {
 		ctx.ui.setStatus(
 			STATUS_ID,
-			enabled ? ctx.ui.theme.fg("accent", "💬 DISCUSSION") : undefined,
+			enabled
+				? implementationTurn
+					? ctx.ui.theme.fg("warning", "🔧 IMPLEMENTATION")
+					: ctx.ui.theme.fg("accent", "💬 DISCUSSION")
+				: undefined,
 		);
 	}
 
@@ -100,7 +104,7 @@ export default function discussionMode(pi: ExtensionAPI): void {
 		event.systemPromptOptions.sections["discussion-mode"] = DISCUSSION_GUIDANCE;
 	});
 
-	pi.on("message_start", async (event) => {
+	pi.on("message_start", async (event, ctx) => {
 		if (event.message.role !== "user") {
 			return;
 		}
@@ -114,10 +118,12 @@ export default function discussionMode(pi: ExtensionAPI): void {
 						.map((part) => part.text)
 						.join("\n");
 		implementationTurn = isImplementationTurn(text);
+		updateStatus(ctx);
 	});
 
-	pi.on("agent_settled", async () => {
+	pi.on("agent_settled", async (_event, ctx) => {
 		implementationTurn = false;
+		updateStatus(ctx);
 	});
 
 	pi.registerCommand("discussion", {
