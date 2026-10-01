@@ -36,19 +36,33 @@ type TodoDetails = {
 const TodoParams = Type.Object({
 	action: StringEnum(["list", "add", "complete", "toggle", "clear"] as const),
 	text: Type.Optional(
-		Type.Array(Type.String({ minLength: 1 }), {
-			description: "Todo texts (for add)",
-			minItems: 1,
-		}),
+		Type.Union([
+			Type.Array(Type.String({ minLength: 1 }), {
+				description: "Todo texts (for add)",
+				minItems: 1,
+			}),
+			Type.String({
+				minLength: 1,
+				description: "Exact todo text (for toggle)",
+			}),
+		]),
 	),
-	ids: Type.Optional(
-		Type.Array(Type.Integer({ minimum: 1 }), {
-			description: "Todo IDs (for complete)",
-			minItems: 1,
-			uniqueItems: true,
-		}),
+	items: Type.Optional(
+		Type.Array(
+			Type.Object({
+				id: Type.Integer({ minimum: 1 }),
+				text: Type.String({ minLength: 1 }),
+			}),
+			{
+				description: "Todo IDs and exact texts (for complete)",
+				minItems: 1,
+				uniqueItems: true,
+			},
+		),
 	),
-	id: Type.Optional(Type.Number({ description: "Todo ID (for toggle)" })),
+	id: Type.Optional(
+		Type.Integer({ minimum: 1, description: "Todo ID (for toggle)" }),
+	),
 });
 
 /**
@@ -159,7 +173,7 @@ export default function (pi: ExtensionAPI): void {
 		name: "todo",
 		label: "Todo",
 		description:
-			"Manage a todo list. Actions: list, add (text: non-empty string[]), complete (ids: non-empty number[]), toggle (id), clear",
+			"Manage a todo list. Actions: list, add (text: non-empty string[]), complete (items: non-empty {id, text}[]), toggle (id, text: string), clear. Complete and toggle require exact text matches. A mismatch rejects the entire request and returns the current list.",
 		parameters: TodoParams,
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
@@ -178,7 +192,7 @@ export default function (pi: ExtensionAPI): void {
 					};
 
 				case "add": {
-					if (!params.text || params.text.length === 0) {
+					if (!Array.isArray(params.text) || params.text.length === 0) {
 						return {
 							content: [{ type: "text", text: "Error: text required for add" }],
 							details: {
@@ -215,10 +229,13 @@ export default function (pi: ExtensionAPI): void {
 				}
 
 				case "complete": {
-					if (!params.ids || params.ids.length === 0) {
+					if (!params.items || params.items.length === 0) {
 						return {
 							content: [
-								{ type: "text", text: "Error: ids required for complete" },
+								{
+									type: "text",
+									text: `Error: items required for complete\n${formatTodoList(todos)}`,
+								},
 							],
 							details: {
 								action: "complete",
@@ -226,27 +243,41 @@ export default function (pi: ExtensionAPI): void {
 								added: null,
 								completed: null,
 								nextId,
-								error: "ids required",
+								error: "items required",
 							} as TodoDetails,
 						};
 					}
 
 					const completed: Todo[] = [];
-					const missingIds: number[] = [];
-					for (const id of params.ids) {
-						const todo = todos.find((candidate) => candidate.id === id);
+					for (const item of params.items) {
+						const todo = todos.find(
+							(candidate) =>
+								candidate.id === item.id && candidate.text === item.text,
+						);
 						if (!todo) {
-							missingIds.push(id);
-							continue;
+							const error = `Todo #${item.id} does not match the current list`;
+							return {
+								content: [
+									{
+										type: "text",
+										text: `Error: ${error}\n${formatTodoList(todos)}`,
+									},
+								],
+								details: {
+									action: "complete",
+									todos: cloneTodos(todos),
+									added: null,
+									completed: null,
+									nextId,
+									error,
+								} as TodoDetails,
+							};
 						}
-						todo.done = true;
-						completed.push(todo);
+						if (!completed.includes(todo)) completed.push(todo);
 					}
+					for (const todo of completed) todo.done = true;
 
-					let message = `Completed todos: ${completed.length}`;
-					if (missingIds.length > 0) {
-						message += `\nMissing IDs: ${missingIds.join(", ")}`;
-					}
+					const message = `Completed todos: ${completed.length}`;
 					return {
 						content: [{ type: "text", text: message }],
 						details: {
@@ -261,10 +292,13 @@ export default function (pi: ExtensionAPI): void {
 				}
 
 				case "toggle": {
-					if (params.id === undefined) {
+					if (params.id === undefined || typeof params.text !== "string") {
 						return {
 							content: [
-								{ type: "text", text: "Error: id required for toggle" },
+								{
+									type: "text",
+									text: `Error: id and exact text required for toggle\n${formatTodoList(todos)}`,
+								},
 							],
 							details: {
 								action: "toggle",
@@ -272,21 +306,30 @@ export default function (pi: ExtensionAPI): void {
 								added: null,
 								completed: null,
 								nextId,
-								error: "id required",
+								error: "id and exact text required",
 							} as TodoDetails,
 						};
 					}
-					const todo = todos.find((t) => t.id === params.id);
+					const todo = todos.find(
+						(candidate) =>
+							candidate.id === params.id && candidate.text === params.text,
+					);
 					if (!todo) {
+						const error = `Todo #${params.id} does not match the current list`;
 						return {
-							content: [{ type: "text", text: `Todo #${params.id} not found` }],
+							content: [
+								{
+									type: "text",
+									text: `Error: ${error}\n${formatTodoList(todos)}`,
+								},
+							],
 							details: {
 								action: "toggle",
 								todos: cloneTodos(todos),
 								added: null,
 								completed: null,
 								nextId,
-								error: `#${params.id} not found`,
+								error,
 							} as TodoDetails,
 						};
 					}
@@ -332,11 +375,11 @@ export default function (pi: ExtensionAPI): void {
 			let text =
 				theme.fg("toolTitle", theme.bold("todo ")) +
 				theme.fg("muted", args.action);
-			if (args.text) {
+			if (Array.isArray(args.text)) {
 				text += ` ${theme.fg("dim", `todos: ${args.text.length}`)}`;
 			}
-			if (args.ids) {
-				text += ` ${theme.fg("dim", `todos: ${args.ids.length}`)}`;
+			if (args.items) {
+				text += ` ${theme.fg("dim", `todos: ${args.items.length}`)}`;
 			}
 			if (args.id !== undefined)
 				text += ` ${theme.fg("accent", `#${args.id}`)}`;
