@@ -58,11 +58,11 @@ async function currentBranch(
 	cwd: string,
 	signal?: AbortSignal,
 ): Promise<string | undefined> {
-	const result = await runGit(
-		["symbolic-ref", "--quiet", "--short", "HEAD"],
+	const result = await runGit({
+		args: ["symbolic-ref", "--quiet", "--short", "HEAD"],
 		cwd,
 		signal,
-	);
+	});
 	if (result.exitCode !== 0) return undefined;
 	const branch = result.stdout.trim();
 	return branch.length > 0 ? branch : undefined;

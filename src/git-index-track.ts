@@ -16,6 +16,7 @@ import type {
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { errorMessage } from "./utils/error-message";
 import { formatGitFailure, runGit } from "./utils/git";
 
 type PathState = "new" | "deleted" | "staged-deleted" | "tracked";
@@ -66,11 +67,11 @@ async function execute(
 	ctx: ExtensionContext,
 	signal?: AbortSignal,
 ): Promise<AgentToolResult<ToolDetails>> {
-	const repoRootResult = await runGit(
-		["rev-parse", "--show-toplevel"],
-		ctx.cwd,
+	const repoRootResult = await runGit({
+		args: ["rev-parse", "--show-toplevel"],
+		cwd: ctx.cwd,
 		signal,
-	);
+	});
 	if (repoRootResult.exitCode !== 0) {
 		return result(
 			`Cannot track paths outside a Git worktree. ${formatGitFailure("rev-parse --show-toplevel", repoRootResult)}`,
@@ -117,11 +118,11 @@ async function execute(
 	}
 
 	if (added.length > 0) {
-		const addResult = await runGit(
-			["add", "-N", "--", ...added],
-			repoRoot,
+		const addResult = await runGit({
+			args: ["add", "-N", "--", ...added],
+			cwd: repoRoot,
 			signal,
-		);
+		});
 		if (addResult.exitCode !== 0) {
 			return result(formatGitFailure("add -N", addResult), {
 				added: [],
@@ -131,11 +132,11 @@ async function execute(
 		}
 	}
 	if (deletionsToStage.length > 0) {
-		const deleteResult = await runGit(
-			["add", "-u", "--", ...deletionsToStage],
-			repoRoot,
+		const deleteResult = await runGit({
+			args: ["add", "-u", "--", ...deletionsToStage],
+			cwd: repoRoot,
 			signal,
-		);
+		});
 		if (deleteResult.exitCode !== 0) {
 			return result(formatGitFailure("add -u", deleteResult), {
 				added,
@@ -207,11 +208,11 @@ async function classifyPath(
 		}
 	}
 
-	const trackedResult = await runGit(
-		["ls-files", "--error-unmatch", "--", candidate],
-		repoRoot,
+	const trackedResult = await runGit({
+		args: ["ls-files", "--error-unmatch", "--", candidate],
+		cwd: repoRoot,
 		signal,
-	);
+	});
 	if (trackedResult.exitCode === 0) {
 		return { path: candidate, state: exists ? "tracked" : "deleted" };
 	}
@@ -219,8 +220,8 @@ async function classifyPath(
 		return formatGitFailure("ls-files --error-unmatch", trackedResult);
 	}
 	if (!exists) {
-		const stagedDeletionResult = await runGit(
-			[
+		const stagedDeletionResult = await runGit({
+			args: [
 				"diff",
 				"--cached",
 				"--no-renames",
@@ -230,9 +231,9 @@ async function classifyPath(
 				"--",
 				candidate,
 			],
-			repoRoot,
+			cwd: repoRoot,
 			signal,
-		);
+		});
 		if (stagedDeletionResult.exitCode !== 0) {
 			return formatGitFailure("diff --cached", stagedDeletionResult);
 		}
@@ -267,8 +268,4 @@ function result(
 		content: [{ type: "text", text }],
 		details,
 	};
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }

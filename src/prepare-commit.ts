@@ -5,6 +5,7 @@ import type {
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { errorMessage } from "./utils/error-message";
 import { formatGitFailure, runGit } from "./utils/git";
 
 type ToolDetails = {
@@ -42,11 +43,11 @@ async function execute(
 		return result("Error: Commit message cannot be empty.");
 	}
 
-	const artifactPathResult = await runGit(
-		["rev-parse", "--path-format=absolute", "--git-path", ARTIFACT_NAME],
-		ctx.cwd,
+	const artifactPathResult = await runGit({
+		args: ["rev-parse", "--path-format=absolute", "--git-path", ARTIFACT_NAME],
+		cwd: ctx.cwd,
 		signal,
-	);
+	});
 	if (artifactPathResult.exitCode !== 0) {
 		return result(
 			`Error: Cannot prepare a commit outside a Git worktree. ${formatGitFailure("rev-parse --git-path", artifactPathResult)}`,
@@ -73,8 +74,4 @@ function result(
 		content: [{ type: "text", text }],
 		details: { artifactPath },
 	};
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }

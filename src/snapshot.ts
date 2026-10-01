@@ -12,9 +12,6 @@
  *   accumulated since the last agent edit or review, tracked by reviewBaseline.
  */
 
-import { copyFile, lstat, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import type {
 	AgentEndEvent,
 	AgentToolResult,
@@ -24,26 +21,13 @@ import type {
 import { keyText } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
-import {
-	formatGitFailure,
-	type GitResult,
-	runGit,
-	runGitBytes,
-} from "./utils/git";
+import { formatGitFailure, runGit } from "./utils/git";
+import { createSnapshot, type Snapshot } from "./utils/snapshot";
 import {
 	buildExpandableOutput,
 	type ExpandableOutputDetails,
 	formatThemedExpandableOutput,
 } from "./utils/tool-output";
-
-type Snapshot = {
-	readonly id: string;
-	readonly commit: string;
-	readonly tree: string;
-	readonly repoRoot: string;
-	readonly createdAt: number;
-	readonly prompt: string;
-};
 
 type State = {
 	turnStartSnapshot?: Snapshot;
@@ -69,10 +53,6 @@ type State = {
 	reviewInProgress?: Snapshot;
 };
 
-type SnapshotResult =
-	| { readonly ok: true; readonly snapshot: Snapshot }
-	| { readonly ok: false; readonly error: string };
-
 type ToolAction = NonNullable<Static<typeof toolParameters>["action"]>;
 
 type SnapshotAction = ToolAction | "undo";
@@ -94,16 +74,6 @@ const DESCRIPTION = [
 	"Snapshots are commit objects built with a temporary index via GIT_INDEX_FILE and are garbage-collectable if unreferenced.",
 	"Undo is intentionally command-only. The snapshot tool cannot invoke it.",
 ];
-
-// Deterministic identity so snapshot creation never depends on the repo's
-// configured user.name/user.email; commit-tree otherwise fails when no
-// committer identity is set.
-const SNAPSHOT_IDENTITY: Readonly<Record<string, string>> = {
-	GIT_AUTHOR_NAME: "pi snapshot",
-	GIT_AUTHOR_EMAIL: "pi-snapshot@localhost",
-	GIT_COMMITTER_NAME: "pi snapshot",
-	GIT_COMMITTER_EMAIL: "pi-snapshot@localhost",
-};
 
 // Collapse displayed snapshot messages to this many lines unless expanded,
 // matching the turn-snapshot tool's own result rendering.
@@ -138,11 +108,11 @@ export default function turnSnapshot(pi: ExtensionAPI): void {
 	// fallback for reviewBaseline.
 	pi.on("session_start", async (event, ctx) => {
 		if (state.reviewBaseline !== undefined) return;
-		const result = await createSnapshot(
-			ctx.cwd,
-			`session checkpoint (${event.reason})`,
-			ctx.signal,
-		);
+		const result = await createSnapshot({
+			cwd: ctx.cwd,
+			description: `session checkpoint (${event.reason})`,
+			signal: ctx.signal,
+		});
 		if (!result.ok) return;
 		state.reviewBaseline = result.snapshot;
 		state.lastTurnEndSnapshot ??= result.snapshot;
@@ -151,7 +121,11 @@ export default function turnSnapshot(pi: ExtensionAPI): void {
 	pi.on("before_agent_start", async (event, ctx) => {
 		const previousTurnEnd = state.lastTurnEndSnapshot;
 
-		const result = await createSnapshot(ctx.cwd, event.prompt, ctx.signal);
+		const result = await createSnapshot({
+			cwd: ctx.cwd,
+			description: event.prompt,
+			signal: ctx.signal,
+		});
 		if (!result.ok) {
 			state.turnStartSnapshot = undefined;
 			state.lastError = result.error;
@@ -189,11 +163,11 @@ export default function turnSnapshot(pi: ExtensionAPI): void {
 	// tree), discarding pending user edits now entangled with agent edits; and
 	// initialize it on the first successful capture.
 	pi.on("agent_end", async (event, ctx) => {
-		const result = await createSnapshot(
-			ctx.cwd,
-			"turn-end baseline",
-			ctx.signal,
-		);
+		const result = await createSnapshot({
+			cwd: ctx.cwd,
+			description: "turn-end baseline",
+			signal: ctx.signal,
+		});
 		if (!result.ok) {
 			state.lastTurnEndSnapshot = undefined;
 			// Drop any in-flight review marker: without an end snapshot the baseline
@@ -331,7 +305,7 @@ export default function turnSnapshot(pi: ExtensionAPI): void {
 function runInterrupted(messages: AgentEndEvent["messages"]): boolean {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const message = messages[i];
-		if (message.role === "assistant") {
+		if (message?.role === "assistant") {
 			return message.stopReason === "aborted" || message.stopReason === "error";
 		}
 	}
@@ -356,7 +330,11 @@ async function runReview(
 		);
 		return;
 	}
-	const live = await createSnapshot(ctx.cwd, "review guard", ctx.signal);
+	const live = await createSnapshot({
+		cwd: ctx.cwd,
+		description: "review guard",
+		signal: ctx.signal,
+	});
 	if (!live.ok) {
 		ctx.ui.notify(live.error, "warning");
 		return;
@@ -455,11 +433,11 @@ async function executeAction(
 		}
 
 		case "diff": {
-			const live = await createSnapshot(
-				ctx.cwd,
-				"turn snapshot diff live snapshot",
-				signal,
-			);
+			const live = await createSnapshot({
+				cwd: ctx.cwd,
+				description: "turn snapshot diff live snapshot",
+				signal: signal,
+			});
 			if (!live.ok) return textResult(live.error, action, true);
 			if (live.snapshot.repoRoot !== state.turnStartSnapshot.repoRoot) {
 				return textResult(
@@ -468,30 +446,30 @@ async function executeAction(
 					true,
 				);
 			}
-			const diff = await git(
-				[
+			const diff = await runGit({
+				args: [
 					"diff",
 					"--find-renames",
 					"--stat",
 					state.turnStartSnapshot.commit,
 					live.snapshot.commit,
 				],
-				state.turnStartSnapshot.repoRoot,
+				cwd: state.turnStartSnapshot.repoRoot,
 				signal,
-			);
+			});
 			if (diff.exitCode !== 0) {
 				return textResult(formatGitFailure("diff --stat", diff), action, true);
 			}
-			const patch = await git(
-				[
+			const patch = await runGit({
+				args: [
 					"diff",
 					"--find-renames",
 					state.turnStartSnapshot.commit,
 					live.snapshot.commit,
 				],
-				state.turnStartSnapshot.repoRoot,
+				cwd: state.turnStartSnapshot.repoRoot,
 				signal,
-			);
+			});
 			if (patch.exitCode !== 0) {
 				return textResult(formatGitFailure("diff", patch), action, true);
 			}
@@ -560,167 +538,6 @@ async function executeAction(
 			);
 		}
 	}
-}
-
-/** Capture Git-visible content without changes to the checkout or its index. */
-export async function createSnapshot(
-	cwd: string,
-	prompt: string,
-	signal?: AbortSignal,
-): Promise<SnapshotResult> {
-	try {
-		const repoRootResult = await git(
-			["rev-parse", "--show-toplevel"],
-			cwd,
-			signal,
-		);
-		if (repoRootResult.exitCode !== 0) {
-			return {
-				ok: false,
-				error: `Cannot create turn snapshot outside a Git worktree. ${formatGitFailure("rev-parse --show-toplevel", repoRootResult)}`,
-			};
-		}
-		const repoRoot = repoRootResult.stdout.trim();
-		const realIndexPathResult = await git(
-			["rev-parse", "--git-path", "index"],
-			repoRoot,
-			signal,
-		);
-		if (realIndexPathResult.exitCode !== 0) {
-			return {
-				ok: false,
-				error: formatGitFailure(
-					"rev-parse --git-path index",
-					realIndexPathResult,
-				),
-			};
-		}
-		const realIndexPath = path.resolve(
-			repoRoot,
-			realIndexPathResult.stdout.trim(),
-		);
-		return await withTempIndexDir((tempIndexPath) =>
-			buildSnapshotCommit(
-				repoRoot,
-				realIndexPath,
-				tempIndexPath,
-				prompt,
-				signal,
-			),
-		);
-	} catch (error) {
-		return {
-			ok: false,
-			error: `Failed to create turn snapshot: ${errorMessage(error)}`,
-		};
-	}
-}
-
-// Owns the temporary index directory lifecycle so callers stay free of a nested
-// try/finally: the directory is always removed once `fn` settles.
-async function withTempIndexDir<T>(
-	fn: (tempIndexPath: string) => Promise<T>,
-): Promise<T> {
-	const tempDir = await makeTempSnapshotDir();
-	try {
-		return await fn(path.join(tempDir, "index"));
-	} finally {
-		await rm(tempDir, { recursive: true, force: true });
-	}
-}
-
-async function buildSnapshotCommit(
-	repoRoot: string,
-	realIndexPath: string,
-	tempIndexPath: string,
-	prompt: string,
-	signal?: AbortSignal,
-): Promise<SnapshotResult> {
-	if (await fileExists(realIndexPath)) {
-		await copyFile(realIndexPath, tempIndexPath);
-	} else {
-		const emptyResult = await gitWithTempIndex(
-			["read-tree", "--empty"],
-			repoRoot,
-			tempIndexPath,
-			signal,
-		);
-		if (emptyResult.exitCode !== 0) {
-			return {
-				ok: false,
-				error: formatGitFailure("read-tree --empty", emptyResult),
-			};
-		}
-	}
-
-	const refreshResult = await refreshSnapshotIndex(
-		repoRoot,
-		tempIndexPath,
-		signal,
-	);
-	if (refreshResult.exitCode !== 0) {
-		return {
-			ok: false,
-			error: formatGitFailure("update-index", refreshResult),
-		};
-	}
-
-	// Respect Git ignore rules: include tracked files and non-ignored untracked
-	// files while leaving ignored files outside the snapshot.
-	const addResult = await gitWithTempIndex(
-		["add", "--sparse", "-A"],
-		repoRoot,
-		tempIndexPath,
-		signal,
-	);
-	if (addResult.exitCode !== 0) {
-		return { ok: false, error: formatGitFailure("add --sparse -A", addResult) };
-	}
-
-	const treeResult = await gitWithTempIndex(
-		["write-tree"],
-		repoRoot,
-		tempIndexPath,
-		signal,
-	);
-	if (treeResult.exitCode !== 0) {
-		return { ok: false, error: formatGitFailure("write-tree", treeResult) };
-	}
-	const tree = treeResult.stdout.trim();
-	const headResult = await git(
-		["rev-parse", "--verify", "HEAD"],
-		repoRoot,
-		signal,
-	);
-	const commitArgs = ["commit-tree", tree];
-	if (headResult.exitCode === 0) {
-		commitArgs.push("-p", headResult.stdout.trim());
-	}
-	const commitResult = await runGit(
-		commitArgs,
-		repoRoot,
-		signal,
-		SNAPSHOT_IDENTITY,
-		"pi turn snapshot\n",
-	);
-	if (commitResult.exitCode !== 0) {
-		return {
-			ok: false,
-			error: formatGitFailure("commit-tree", commitResult),
-		};
-	}
-	const commit = commitResult.stdout.trim();
-	return {
-		ok: true,
-		snapshot: {
-			id: commit.slice(0, 12),
-			commit,
-			tree,
-			repoRoot,
-			createdAt: Date.now(),
-			prompt,
-		},
-	};
 }
 
 // Builds the invisible turn-start notice describing user edits made between the
@@ -799,30 +616,30 @@ async function buildSnapshotDiffSection(
 	to: Snapshot,
 	signal?: AbortSignal,
 ): Promise<DiffSection> {
-	const exists = await git(
-		["cat-file", "-e", from.commit],
-		to.repoRoot,
+	const exists = await runGit({
+		args: ["cat-file", "-e", from.commit],
+		cwd: to.repoRoot,
 		signal,
-	);
+	});
 	if (exists.exitCode !== 0) {
 		return {
 			available: false,
 			reason: "the baseline snapshot object was pruned by git.",
 		};
 	}
-	const stat = await git(
-		["diff", "--find-renames", "--stat", from.commit, to.commit],
-		to.repoRoot,
+	const stat = await runGit({
+		args: ["diff", "--find-renames", "--stat", from.commit, to.commit],
+		cwd: to.repoRoot,
 		signal,
-	);
+	});
 	if (stat.exitCode !== 0) {
 		return { available: false, reason: formatGitFailure("diff --stat", stat) };
 	}
-	const patch = await git(
-		["diff", "--find-renames", from.commit, to.commit],
-		to.repoRoot,
+	const patch = await runGit({
+		args: ["diff", "--find-renames", from.commit, to.commit],
+		cwd: to.repoRoot,
 		signal,
-	);
+	});
 	if (patch.exitCode !== 0) {
 		return { available: false, reason: formatGitFailure("diff", patch) };
 	}
@@ -858,11 +675,11 @@ async function restoreToSnapshot(
 	  }
 	| { readonly ok: false; readonly error: string }
 > {
-	const live = await createSnapshot(
+	const live = await createSnapshot({
 		cwd,
-		"turn snapshot restore live snapshot",
+		description: "turn snapshot restore live snapshot",
 		signal,
-	);
+	});
 	if (!live.ok) return live;
 	if (live.snapshot.repoRoot !== target.repoRoot) {
 		return {
@@ -871,11 +688,17 @@ async function restoreToSnapshot(
 		};
 	}
 
-	const patch = await git(
-		["diff", "--binary", "--find-renames", live.snapshot.commit, target.commit],
-		target.repoRoot,
+	const patch = await runGit({
+		args: [
+			"diff",
+			"--binary",
+			"--find-renames",
+			live.snapshot.commit,
+			target.commit,
+		],
+		cwd: target.repoRoot,
 		signal,
-	);
+	});
 	if (patch.exitCode !== 0) {
 		return { ok: false, error: formatGitFailure("diff --binary", patch) };
 	}
@@ -887,12 +710,12 @@ async function restoreToSnapshot(
 	// so the restore needs no temporary index; the patch lands in the working
 	// tree only. Ignored files are absent from snapshots and therefore from the
 	// patch, so they remain untouched.
-	const applyResult = await gitWithInput(
-		["apply", "--binary", "--whitespace=nowarn", "-"],
-		target.repoRoot,
-		patch.stdout,
+	const applyResult = await runGit({
+		args: ["apply", "--binary", "--whitespace=nowarn", "-"],
+		cwd: target.repoRoot,
 		signal,
-	);
+		input: patch.stdout,
+	});
 	if (applyResult.exitCode !== 0) {
 		return {
 			ok: false,
@@ -902,121 +725,14 @@ async function restoreToSnapshot(
 	return { ok: true, changed: true, liveSnapshot: live.snapshot };
 }
 
-async function makeTempSnapshotDir(): Promise<string> {
-	const root = path.join(tmpdir(), "pi-snapshot-");
-	await mkdir(tmpdir(), { recursive: true });
-	return await mkdtemp(root);
-}
-
-async function fileExists(filePath: string): Promise<boolean> {
-	try {
-		const stats = await stat(filePath);
-		return stats.isFile();
-	} catch {
-		return false;
-	}
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
-async function refreshSnapshotIndex(
-	cwd: string,
-	tempIndexPath: string,
-	signal?: AbortSignal,
-): Promise<GitResult> {
-	const env = { GIT_INDEX_FILE: tempIndexPath };
-	const files = await runGitBytes(
-		["ls-files", "--stage", "-z"],
-		cwd,
-		signal,
-		env,
-	);
-	if (files.exitCode !== 0)
-		return { ...files, stdout: files.stdout.toString("utf8") };
-	const names: Buffer[] = [];
-	const presentNames: Buffer[] = [];
-	const separator = Buffer.from("\0");
-	const prefix = Buffer.from(`${cwd}${path.sep}`);
-	for (let start = 0; start < files.stdout.length; ) {
-		const end = files.stdout.indexOf(0, start);
-		if (end < 0) throw new Error("Invalid index path list from Git.");
-		const record = files.stdout.subarray(start, end);
-		start = end + 1;
-		const tab = record.indexOf(9);
-		// Unmerged entries lack stage zero. The later add resolves the private index.
-		if (tab < 0 || !record.subarray(0, tab).toString("ascii").endsWith(" 0"))
-			continue;
-		const name = record.subarray(tab + 1);
-		const indexedName = Buffer.concat([name, separator]);
-		names.push(indexedName);
-		try {
-			await lstat(Buffer.concat([prefix, name]));
-			presentNames.push(indexedName);
-		} catch (error) {
-			const code = (error as NodeJS.ErrnoException).code;
-			if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
-		}
-	}
-	if (names.length === 0) return { ...files, stdout: "" };
-	// Source index hints must not suppress local content in the private capture.
-	const assumeResult = await runGit(
-		["update-index", "--no-assume-unchanged", "-z", "--stdin"],
-		cwd,
-		signal,
-		env,
-		Buffer.concat(names),
-	);
-	if (assumeResult.exitCode !== 0 || presentNames.length === 0)
-		return assumeResult;
-	// Absent sparse paths remain indexed. Present paths contribute their local content.
-	return runGit(
-		["update-index", "--no-skip-worktree", "-z", "--stdin"],
-		cwd,
-		signal,
-		env,
-		Buffer.concat(presentNames),
-	);
-}
-
-async function gitWithTempIndex(
-	args: readonly string[],
-	cwd: string,
-	tempIndexPath: string,
-	signal?: AbortSignal,
-): Promise<GitResult> {
-	return await git(args, cwd, signal, {
-		GIT_INDEX_FILE: tempIndexPath,
-	});
-}
-
-async function gitWithInput(
-	args: readonly string[],
-	cwd: string,
-	input: string,
-	signal?: AbortSignal,
-): Promise<GitResult> {
-	return await runGit(args, cwd, signal, {}, input);
-}
-
-async function git(
-	args: readonly string[],
-	cwd: string,
-	signal?: AbortSignal,
-	env: Readonly<Record<string, string>> = {},
-): Promise<GitResult> {
-	return await runGit(args, cwd, signal, env);
-}
-
 function formatSnapshotSummary(snapshot: Snapshot): string {
 	return [
 		"Turn-start snapshot",
-		`Commit:  ${snapshot.commit}`,
-		`Repo:    ${snapshot.repoRoot}`,
-		`Created: ${new Date(snapshot.createdAt).toISOString()}`,
-		`Prompt:  ${snapshot.prompt.slice(0, 200)}`,
-		"Scope:   Git-visible working-tree content (tracked files plus non-ignored untracked files); ignored files are excluded.",
+		`Commit:       ${snapshot.commit}`,
+		`Repo:         ${snapshot.repoRoot}`,
+		`Created:      ${new Date(snapshot.createdAt).toISOString()}`,
+		`Description:  ${snapshot.description.slice(0, 200)}`,
+		"Scope:        Git-visible working-tree content (tracked files plus non-ignored untracked files); ignored files are excluded.",
 		"",
 		"Use action=diff to compare the turn-start snapshot to a live snapshot without inspecting staged diffs.",
 	].join("\n");

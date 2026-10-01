@@ -158,20 +158,20 @@ async function renderContext(
 	worktree: string,
 	signal?: AbortSignal,
 ): Promise<string> {
-	const repoCheck = await runGit(
-		["rev-parse", "--is-inside-work-tree"],
-		worktree,
+	const repoCheck = await runGit({
+		args: ["rev-parse", "--is-inside-work-tree"],
+		cwd: worktree,
 		signal,
-	);
+	});
 	if (repoCheck.exitCode !== 0 || repoCheck.stdout.trim() !== "true") {
 		return `Not a git repository in the current worktree (${worktree}).`;
 	}
 
-	const prevRes = await runGit(
-		["log", "-1", "--format=%H", "--", INDEX_REL],
-		worktree,
+	const prevRes = await runGit({
+		args: ["log", "-1", "--format=%H", "--", INDEX_REL],
+		cwd: worktree,
 		signal,
-	);
+	});
 	const prev = prevRes.exitCode === 0 ? prevRes.stdout.trim() : "";
 	const fresh = prev.length === 0;
 
@@ -180,17 +180,17 @@ async function renderContext(
 		// `git diff <commit>` (no second ref) compares the commit against the
 		// working tree, so this covers committed, staged, and unstaged tracked
 		// changes since the previously analyzed commit.
-		const changedRes = await runGit(
-			["diff", "--name-status", prev, "--", ".", `:(exclude)issues/`],
-			worktree,
+		const changedRes = await runGit({
+			args: ["diff", "--name-status", prev, "--", ".", `:(exclude)issues/`],
+			cwd: worktree,
 			signal,
-		);
+		});
 		const diffChanged =
 			changedRes.exitCode === 0 ? changedRes.stdout.trim() : "";
 		// git diff omits untracked files; list them so a pre-commit scan sees new
 		// files too. Prefix with the porcelain '??' code to match the diff column.
-		const untrackedRes = await runGit(
-			[
+		const untrackedRes = await runGit({
+			args: [
 				"ls-files",
 				"--others",
 				"--exclude-standard",
@@ -198,9 +198,9 @@ async function renderContext(
 				".",
 				`:(exclude)issues/`,
 			],
-			worktree,
+			cwd: worktree,
 			signal,
-		);
+		});
 		const untracked =
 			untrackedRes.exitCode === 0 ? untrackedRes.stdout.trim() : "";
 		const untrackedLines = untracked

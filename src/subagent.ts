@@ -57,6 +57,7 @@ import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
+import { errorMessage } from "./utils/error-message";
 import {
 	buildExpandableOutput,
 	buildExpandableTailOutput,
@@ -145,7 +146,7 @@ const DISCUSSION_EXTENSION_FILE = "discussion.ts";
 function getFinalOutput(messages: AgentMessage[]): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
-		if (msg.role !== "assistant") {
+		if (msg?.role !== "assistant") {
 			continue;
 		}
 		const textContent = msg.content
@@ -615,7 +616,7 @@ async function runSubagent({
 			updatesDisabled = true;
 			updateDirty = false;
 			console.warn(
-				`[subagent] Disabling partial updates for agent "${agent.name}": ${error instanceof Error ? error.message : String(error)}`,
+				`[subagent] Disabling partial updates for agent "${agent.name}": ${errorMessage(error)}`,
 			);
 		}
 	};
@@ -695,8 +696,7 @@ async function runSubagent({
 				try {
 					await activeSession.abort();
 				} catch (error) {
-					abortErrorMessage =
-						error instanceof Error ? error.message : String(error);
+					abortErrorMessage = errorMessage(error);
 				}
 			})();
 		};
@@ -818,7 +818,7 @@ async function runSubagent({
 	} catch (error) {
 		aborted = aborted || signal?.aborted === true;
 		exitCode = 1;
-		stderr = error instanceof Error ? error.message : String(error);
+		stderr = errorMessage(error);
 		activity.append(`${aborted ? "aborting" : "failed"}: ${stderr}`);
 		activity.setStatusOutput("subagent error", stderr);
 		emitUpdate(aborted ? "aborting" : "failed");
@@ -1056,20 +1056,14 @@ function loadAgentsFromDir(dir: string): AgentConfig[] {
 		try {
 			content = fs.readFileSync(filePath, "utf-8");
 		} catch (error) {
-			failAgent(
-				filePath,
-				`unreadable: ${error instanceof Error ? error.message : String(error)}`,
-			);
+			failAgent(filePath, `unreadable: ${errorMessage(error)}`);
 		}
 
 		let parsed: { frontmatter: Record<string, unknown>; body: string };
 		try {
 			parsed = parseFrontmatter<Record<string, unknown>>(content);
 		} catch (error) {
-			failAgent(
-				filePath,
-				`invalid frontmatter: ${error instanceof Error ? error.message : String(error)}`,
-			);
+			failAgent(filePath, `invalid frontmatter: ${errorMessage(error)}`);
 		}
 		const { frontmatter, body } = parsed;
 

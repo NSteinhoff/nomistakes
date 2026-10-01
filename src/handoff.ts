@@ -1,7 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { generateHandoffPrompt } from "./utils/handoff";
 import { deriveSessionName, editAndSeedChildSession } from "./utils/session";
-import { blockWorktreeSessionCreation } from "./utils/worktree-patch";
 
 const HANDOFF_CUSTOM_TYPE = "handoff-prompt";
 
@@ -9,7 +8,6 @@ export default function (pi: ExtensionAPI): void {
 	pi.registerCommand("handoff", {
 		description: "Transfer context to a new focused session",
 		handler: async (args, ctx) => {
-			if (await blockWorktreeSessionCreation(pi, ctx)) return;
 			if (ctx.mode !== "tui") {
 				ctx.ui.notify("handoff requires interactive mode", "error");
 				return;

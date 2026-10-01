@@ -442,10 +442,9 @@ function parseTargets(makefileContent: string): TargetInfo[] {
 			continue;
 		}
 
-		const match = line.match(
-			/^([A-Za-z0-9_./-][A-Za-z0-9_./-]*)\s*:(?![=])(.*)$/,
-		);
-		if (match) {
+		const match =
+			line.match(/^([A-Za-z0-9_./-][A-Za-z0-9_./-]*)\s*:(?![=])(.*)$/) ?? [];
+		if (match?.[1]) {
 			const name = match[1];
 			const rest = match[2] ?? "";
 

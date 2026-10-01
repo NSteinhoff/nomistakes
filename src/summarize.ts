@@ -28,7 +28,6 @@ import {
 	editAndSeedChildSession,
 	generateWithLoader,
 } from "./utils/session";
-import { blockWorktreeSessionCreation } from "./utils/worktree-patch";
 
 const SYSTEM_PROMPT = `You are a session summarization assistant. You are given the complete history of a coding-agent session, including every branch that was explored. Only user messages, the agent's text responses, and explicit decision points ("[Decision]:" lines capturing a question, its options, and the chosen answer) are included; other tool activity has been removed.
 
@@ -198,9 +197,9 @@ function renderSegment(
 		if (text) {
 			segmentLines.push(text);
 		}
-		const next = children.get(currentId) ?? [];
-		if (next.length === 1) {
-			currentId = next[0].id;
+		const [first, more] = children.get(currentId) ?? [];
+		if (first && !more) {
+			currentId = first.id;
 			continue;
 		}
 		break;
@@ -218,16 +217,16 @@ function renderSegment(
 
 	const forks = children.get(currentId) ?? [];
 	if (forks.length > 1) {
-		for (let i = 0; i < forks.length; i++) {
+		forks.forEach((fork, i) => {
 			renderSegment(
-				forks[i].id,
+				fork.id,
 				`${label}.${i + 1}`,
 				children,
 				entries,
 				multiBranch,
 				lines,
 			);
-		}
+		});
 	}
 }
 
@@ -272,16 +271,9 @@ function serializeSession(allEntries: readonly SessionEntry[]): string {
 	const multiBranch = leafCount > 1 || roots.length > 1;
 
 	const lines: string[] = [];
-	for (let i = 0; i < roots.length; i++) {
-		renderSegment(
-			roots[i].id,
-			`${i + 1}`,
-			children,
-			entries,
-			multiBranch,
-			lines,
-		);
-	}
+	roots.forEach((root, i) => {
+		renderSegment(root.id, `${i + 1}`, children, entries, multiBranch, lines);
+	});
 
 	return lines.join("\n").trim();
 }
@@ -290,7 +282,6 @@ export default function (pi: ExtensionAPI): void {
 	pi.registerCommand("summarize", {
 		description: "Summarize the entire session, including all branches",
 		handler: async (_args, ctx) => {
-			if (await blockWorktreeSessionCreation(pi, ctx)) return;
 			if (ctx.mode !== "tui") {
 				ctx.ui.notify("summarize requires interactive mode", "error");
 				return;

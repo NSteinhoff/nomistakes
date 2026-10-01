@@ -6,15 +6,22 @@
  * - Generation runs behind a cancellable loader; abort/failure yields null.
  * - Child sessions track the current session as parent.
  */
+import { writeFile } from "node:fs/promises";
 
 import type { Api, Message, Model } from "@earendil-works/pi-ai";
 import type {
 	ExtensionCommandContext,
 	ExtensionContext,
+	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { BorderedLoader } from "@earendil-works/pi-coding-agent";
 
 const MAX_SESSION_NAME_LENGTH = 60;
+
+export type SessionInfo = {
+	readonly sessionId: string;
+	readonly sessionName: string | undefined;
+};
 
 /** Normalize whitespace and cap length for a session display name. */
 export function deriveSessionName(value: string): string {
@@ -163,4 +170,19 @@ export async function editAndSeedChildSession(
 		contextEntry: { customType: options.customType, content },
 		readyNotice: options.readyNotice,
 	});
+}
+
+export async function flushSessionFile(
+	session: SessionManager,
+): Promise<string | undefined> {
+	const file = session.getSessionFile();
+	if (file === undefined) {
+		return undefined;
+	}
+	await writeFile(
+		file,
+		`${[session.getHeader(), ...session.getEntries()].map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+		{ flag: "wx" },
+	);
+	return file;
 }

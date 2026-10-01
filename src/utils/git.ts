@@ -7,6 +7,8 @@
  */
 
 import { spawn } from "node:child_process";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
+import path from "node:path";
 
 export type GitResult = {
 	readonly stdout: string;
@@ -16,24 +18,30 @@ export type GitResult = {
 
 type GitBytesResult = Omit<GitResult, "stdout"> & { readonly stdout: Buffer };
 
-export async function runGit(
-	args: readonly string[],
-	cwd: string,
-	signal?: AbortSignal,
-	env: Readonly<Record<string, string>> = {},
-	input?: string | Buffer,
-): Promise<GitResult> {
-	const result = await runGitBytes(args, cwd, signal, env, input);
+export async function runGit(params: {
+	args: readonly string[];
+	cwd: string;
+	signal?: AbortSignal;
+	env?: Readonly<Record<string, string>>;
+	input?: string | Buffer;
+}): Promise<GitResult> {
+	const result = await runGitBytes(params);
 	return { ...result, stdout: result.stdout.toString("utf8") };
 }
 
-export async function runGitBytes(
-	args: readonly string[],
-	cwd: string,
-	signal?: AbortSignal,
-	env: Readonly<Record<string, string>> = {},
-	input?: string | Buffer,
-): Promise<GitBytesResult> {
+export async function runGitBytes({
+	args,
+	cwd,
+	env = {},
+	input,
+	signal,
+}: {
+	args: readonly string[];
+	cwd: string;
+	signal?: AbortSignal;
+	env?: Readonly<Record<string, string>>;
+	input?: string | Buffer;
+}): Promise<GitBytesResult> {
 	if (signal?.aborted)
 		return { stdout: Buffer.alloc(0), stderr: "aborted", exitCode: 130 };
 
@@ -92,10 +100,61 @@ export async function runGitBytes(
 	});
 }
 
+export async function gitOutput(
+	args: readonly string[],
+	cwd: string,
+): Promise<string> {
+	const result = await runGit({ args, cwd });
+	if (result.exitCode !== 0) {
+		throw new Error(formatGitFailure(args.join(" "), result));
+	}
+	return result.stdout.trim();
+}
+
 export function formatGitFailure(command: string, result: GitResult): string {
 	const detailParts: string[] = [];
 	if (result.stderr) detailParts.push(`stderr:\n${result.stderr}`);
 	if (result.stdout) detailParts.push(`stdout:\n${result.stdout}`);
 	const details = detailParts.length > 0 ? `\n${detailParts.join("\n\n")}` : "";
 	return `git ${command} failed with code ${result.exitCode}.${details}`;
+}
+
+export async function gitAddExcludeRule(
+	rule: string,
+	cwd: string,
+): Promise<void> {
+	const excludeFilePath = path.resolve(
+		cwd,
+		await gitOutput(["rev-parse", "--git-path", "info/exclude"], cwd),
+	);
+	await mkdir(path.dirname(excludeFilePath), { recursive: true });
+
+	let text = "";
+	try {
+		text = await readFile(excludeFilePath, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+			throw error;
+		}
+	}
+
+	if (!splitLines(text).includes(rule)) {
+		await appendFile(excludeFilePath, `\n${rule}\n`);
+	}
+
+	const check = rule.startsWith("/") ? rule.slice(1) : rule;
+	const ignored = await runGit({
+		args: ["check-ignore", "--quiet", "--", check],
+		cwd,
+	});
+
+	if (ignored.exitCode !== 0) {
+		throw new Error(
+			"Git does not ignore the patch directory. Check the parent checkout's ignore rules.",
+		);
+	}
+}
+
+function splitLines(text: string): string[] {
+	return text.split(/\r?\n/);
 }

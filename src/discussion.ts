@@ -66,8 +66,8 @@ export default function discussionMode(pi: ExtensionAPI): void {
 			STATUS_ID,
 			enabled
 				? implementationTurn
-					? ctx.ui.theme.fg("warning", "🔧 IMPLEMENTATION")
-					: ctx.ui.theme.fg("accent", "💬 DISCUSSION")
+					? ctx.ui.theme.fg("warning", "[🔧 IMPLEMENTATION]")
+					: ctx.ui.theme.fg("accent", "[💬 DISCUSSION]")
 				: undefined,
 		);
 	}

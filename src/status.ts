@@ -207,11 +207,11 @@ const execute = async (
 	});
 	if (validationError) return textResult(validationError);
 
-	const repoCheck = await runGit(
-		["rev-parse", "--is-inside-work-tree"],
-		worktree,
+	const repoCheck = await runGit({
+		args: ["rev-parse", "--is-inside-work-tree"],
+		cwd: worktree,
 		signal,
-	);
+	});
 	if (repoCheck.exitCode !== 0 || repoCheck.stdout.trim() !== "true") {
 		return textResult(
 			`Not a git repository in the current worktree (${worktree}). ${formatGitFailure("rev-parse --is-inside-work-tree", repoCheck)}`,
@@ -291,34 +291,34 @@ async function renderOverview(input: {
 	if (input.path) statusArgs.push("--", input.path);
 
 	const [statusRes, logRes, headTagsRes, recentTagsRes] = await Promise.all([
-		runGit(statusArgs, input.worktree, input.signal),
-		runGit(
-			[
+		runGit({ args: statusArgs, cwd: input.worktree, signal: input.signal }),
+		runGit({
+			args: [
 				"log",
 				`-n${input.maxCommits}`,
 				"--pretty=format:%h%x09%ar%x09%d%x09%s",
 				"--decorate=short",
 				...(input.path ? ["--", input.path] : []),
 			],
-			input.worktree,
-			input.signal,
-		),
-		runGit(
-			["tag", "--points-at", "HEAD", "--sort=-creatordate"],
-			input.worktree,
-			input.signal,
-		),
-		runGit(
-			[
+			cwd: input.worktree,
+			signal: input.signal,
+		}),
+		runGit({
+			args: ["tag", "--points-at", "HEAD", "--sort=-creatordate"],
+			cwd: input.worktree,
+			signal: input.signal,
+		}),
+		runGit({
+			args: [
 				"for-each-ref",
 				`--count=${input.maxCommits}`,
 				"--sort=-creatordate",
 				"--format=%(refname:short)%09%(creatordate:relative)",
 				"refs/tags",
 			],
-			input.worktree,
-			input.signal,
-		),
+			cwd: input.worktree,
+			signal: input.signal,
+		}),
 	]);
 
 	if (statusRes.exitCode !== 0) {
@@ -417,11 +417,11 @@ async function renderDiff(input: {
 
 	if (input.base || input.head) {
 		const range = `${input.base || "HEAD"}..${input.head || "HEAD"}`;
-		const rangeRes = await runGit(
-			["diff", ...modeArgs, range, ...pathArgs],
-			input.worktree,
-			input.signal,
-		);
+		const rangeRes = await runGit({
+			args: ["diff", ...modeArgs, range, ...pathArgs],
+			cwd: input.worktree,
+			signal: input.signal,
+		});
 		if (rangeRes.exitCode !== 0) {
 			return formatGitFailure(
 				`diff ${input.stat ? "--stat" : "--patch"} ${range}`,
@@ -435,11 +435,11 @@ async function renderDiff(input: {
 	}
 
 	if (input.staged) {
-		const stagedRes = await runGit(
-			["diff", "--cached", ...modeArgs, ...pathArgs],
-			input.worktree,
-			input.signal,
-		);
+		const stagedRes = await runGit({
+			args: ["diff", "--cached", ...modeArgs, ...pathArgs],
+			cwd: input.worktree,
+			signal: input.signal,
+		});
 		if (stagedRes.exitCode !== 0) {
 			return formatGitFailure(
 				`diff --cached ${input.stat ? "--stat" : "--patch"}`,
@@ -452,11 +452,11 @@ async function renderDiff(input: {
 		});
 	}
 
-	const unstagedRes = await runGit(
-		["diff", ...modeArgs, ...pathArgs],
-		input.worktree,
-		input.signal,
-	);
+	const unstagedRes = await runGit({
+		args: ["diff", ...modeArgs, ...pathArgs],
+		cwd: input.worktree,
+		signal: input.signal,
+	});
 	if (unstagedRes.exitCode !== 0) {
 		return formatGitFailure(
 			`diff ${input.stat ? "--stat" : "--patch"}`,
@@ -499,7 +499,11 @@ async function renderUntrackedDiff(input: {
 }): Promise<string> {
 	const lsArgs = ["ls-files", "--others", "--exclude-standard", "-z"];
 	if (input.path) lsArgs.push("--", input.path);
-	const lsRes = await runGit(lsArgs, input.worktree, input.signal);
+	const lsRes = await runGit({
+		args: lsArgs,
+		cwd: input.worktree,
+		signal: input.signal,
+	});
 	if (lsRes.exitCode !== 0) {
 		return formatGitFailure("ls-files --others --exclude-standard", lsRes);
 	}
@@ -510,11 +514,11 @@ async function renderUntrackedDiff(input: {
 	const modeArgs = input.stat ? ["--stat"] : ["--patch"];
 	const diffs = await Promise.all(
 		files.map((file) =>
-			runGit(
-				["diff", "--no-index", ...modeArgs, "--", "/dev/null", file],
-				input.worktree,
-				input.signal,
-			),
+			runGit({
+				args: ["diff", "--no-index", ...modeArgs, "--", "/dev/null", file],
+				cwd: input.worktree,
+				signal: input.signal,
+			}),
 		),
 	);
 
@@ -568,7 +572,7 @@ async function renderLog(input: {
 
 	if (input.path) args.push("--", input.path);
 
-	const res = await runGit(args, input.worktree, input.signal);
+	const res = await runGit({ args, cwd: input.worktree, signal: input.signal });
 	if (res.exitCode !== 0) return formatGitFailure("log", res);
 
 	const trimmed = res.stdout.trim();
@@ -602,7 +606,7 @@ async function renderShow(input: {
 				input.rev,
 				...(input.path ? ["--", input.path] : []),
 			];
-	const res = await runGit(args, input.worktree, input.signal);
+	const res = await runGit({ args, cwd: input.worktree, signal: input.signal });
 	if (res.exitCode !== 0) {
 		return formatGitFailure(
 			`${input.stat ? "log -n1 --stat" : "show --patch"} --format=fuller ${input.rev}`,

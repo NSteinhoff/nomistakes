@@ -19,6 +19,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
+import { errorMessage } from "./utils/error-message";
 
 const moveParameters = Type.Object({
 	path: Type.String({
@@ -102,7 +103,7 @@ async function deleteFile(
 		return textResult(`Deleted file: ${sourceInput}`);
 	} catch (error) {
 		return textResult(
-			`Delete failed for '${sourceInput}': ${(error as Error).message}`,
+			`Delete failed for '${sourceInput}': ${errorMessage(error)}`,
 		);
 	}
 }
@@ -152,7 +153,7 @@ async function moveFile(
 		return textResult(`Moved file: ${sourceInput} -> ${destination}`);
 	} catch (error) {
 		return textResult(
-			`Move failed '${sourceInput}' -> '${destination}': ${(error as Error).message}`,
+			`Move failed '${sourceInput}' -> '${destination}': ${errorMessage(error)}`,
 		);
 	}
 }

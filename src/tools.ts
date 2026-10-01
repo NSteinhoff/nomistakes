@@ -16,6 +16,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { DeleteFileToolInput, MoveFileToolInput } from "./file";
+import { errorMessage } from "./utils/error-message";
 import { pruneSpillDir, SPILL_DIR } from "./utils/spill";
 
 const CHECKED_TOOLS = [
@@ -145,7 +146,7 @@ export default function (pi: ExtensionAPI) {
 			try {
 				resolved = resolveCheckedToolPath(toolName, candidate, ctx.cwd);
 			} catch (error) {
-				const reason = `Invalid path '${candidate}': ${(error as Error).message}`;
+				const reason = `Invalid path '${candidate}': ${errorMessage(error)}`;
 				if (ctx.hasUI) ctx.ui.notify(reason, "warning");
 				return { block: true, reason };
 			}
@@ -472,7 +473,7 @@ function isProtectedPath(candidatePath: string): boolean {
 }
 
 function capitalize(value: string): string {
-	return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
+	return value.length === 0 ? value : value[0]?.toUpperCase() + value.slice(1);
 }
 
 function isHiddenPath(candidatePath: string): boolean {
