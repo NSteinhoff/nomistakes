@@ -161,13 +161,18 @@ export default function (pi: ExtensionAPI) {
 			const protectedMutation =
 				!READONLY_TOOLS.has(event.toolName) &&
 				(isProtectedPath(policyPath) || isProtectedPath(resolved));
+			const withinCwd = isWithinBase(canonicalCwd, policyPath);
+			const hiddenPolicyPath = withinCwd
+				? path.relative(canonicalCwd, policyPath)
+				: policyPath;
 			const requiresDecision =
-				(!allowedHiddenPath && isHiddenPath(policyPath)) || protectedMutation;
+				(!allowedHiddenPath && isHiddenPath(hiddenPolicyPath)) ||
+				protectedMutation;
 			const accessLabel = protectedMutation
 				? "protected file"
 				: "hidden dotfile";
 			let allowedByUserDecision = false;
-			if (!isWithinBase(canonicalCwd, policyPath) && !allowedExternalRead) {
+			if (!withinCwd && !allowedExternalRead) {
 				const reason = `Path '${candidate}' resolves outside cwd and is blocked: ${policyPath}`;
 				if (ctx.hasUI) {
 					ctx.ui.notify(reason, "warning");
