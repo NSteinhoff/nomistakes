@@ -16,9 +16,9 @@ import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { formatGitFailure, runGit } from "./utils/git";
 import {
-	buildExpandableOutput,
 	type ExpandableOutputDetails,
-	formatThemedExpandableOutput,
+	renderExpandableToolResult,
+	buildExpandableToolResult as textResult,
 } from "./utils/tool-output";
 
 const DESCRIPTION = [
@@ -167,18 +167,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			return new Text(parts.join(""), 0, 0);
 		},
-		renderResult(result, options, theme) {
-			return new Text(
-				formatThemedExpandableOutput(
-					result.details,
-					options.expanded,
-					theme,
-					32,
-				),
-				0,
-				0,
-			);
-		},
+		renderResult: renderExpandableToolResult,
 		execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
 			return await execute(params, ctx, signal);
 		},
@@ -266,14 +255,6 @@ const execute = async (
 };
 
 type ToolDetails = ExpandableOutputDetails;
-
-function textResult(text: string): AgentToolResult<ToolDetails> {
-	const { contentText, details } = buildExpandableOutput(text);
-	return {
-		content: [{ type: "text", text: contentText }],
-		details,
-	};
-}
 
 async function renderOverview(input: {
 	worktree: string;

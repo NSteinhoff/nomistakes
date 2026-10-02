@@ -26,8 +26,10 @@ import { extractMessageText } from "./utils/message-text";
 import { createSnapshot, type Snapshot } from "./utils/snapshot";
 import {
 	buildExpandableOutput,
+	buildExpandableToolResult,
 	type ExpandableOutputDetails,
 	formatThemedExpandableOutput,
+	renderExpandableToolResult,
 } from "./utils/tool-output";
 
 type State = {
@@ -221,18 +223,7 @@ export default function turnSnapshot(pi: ExtensionAPI): void {
 				0,
 			);
 		},
-		renderResult(result, options, theme) {
-			return new Text(
-				formatThemedExpandableOutput(
-					result.details,
-					options.expanded,
-					theme,
-					32,
-				),
-				0,
-				0,
-			);
-		},
+		renderResult: renderExpandableToolResult,
 		execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
 			return await executeAction(
 				params.action ?? "summary",
@@ -744,11 +735,11 @@ function textResult(
 		Pick<ToolDetails, "changed" | "turnStartSnapshot" | "liveSnapshotCommit">
 	> = {},
 ): AgentToolResult<ToolDetails> {
-	const { contentText, details } = buildExpandableOutput(text);
+	const result = buildExpandableToolResult(text);
 	return {
-		content: [{ type: "text", text: contentText }],
+		...result,
 		details: {
-			...details,
+			...result.details,
 			action,
 			error: isError,
 			...extra,

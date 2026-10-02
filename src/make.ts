@@ -26,6 +26,7 @@ import { extractMessageText } from "./utils/message-text";
 import {
 	buildExpandableMiddleOutput,
 	buildExpandableTailOutput,
+	buildExpandableToolResult,
 	type ExpandableOutputDetails,
 	formatThemedExpandableOutput,
 } from "./utils/tool-output";
@@ -492,9 +493,5 @@ async function getMakefileContents(
 }
 
 function textResult(text: string): AgentToolResult<ToolDetails> {
-	const { contentText, details } = buildExpandableMiddleOutput(text);
-	return {
-		content: [{ type: "text", text: contentText }],
-		details,
-	};
+	return buildExpandableToolResult(text, buildExpandableMiddleOutput);
 }

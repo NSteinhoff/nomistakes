@@ -1,11 +1,15 @@
+import type {
+	AgentToolResult,
+	Theme,
+	TruncationResult,
+} from "@earendil-works/pi-coding-agent";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
-	type Theme,
-	type TruncationResult,
 	truncateHead,
 	truncateTail,
 } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { writeSpillFile } from "./spill";
 
 export type ExpandableOutputDetails = {
@@ -19,6 +23,7 @@ export type ExpandableOutputDetails = {
 
 const FULL_TEXT_MAX_LINES = DEFAULT_MAX_LINES * 10;
 const FULL_TEXT_MAX_BYTES = DEFAULT_MAX_BYTES * 10;
+const TOOL_RENDER_MAX_LINES = 32;
 
 // Share of the budget given to the head when truncating the middle; the tail
 // keeps the rest. Biased toward the tail, where build/test failures summarize,
@@ -30,6 +35,17 @@ export function buildExpandableOutput(text: string): {
 	details: ExpandableOutputDetails;
 } {
 	return buildExpandableOutputWithTruncator(text, truncateHead);
+}
+
+export function buildExpandableToolResult(
+	text: string,
+	buildOutput: typeof buildExpandableOutput = buildExpandableOutput,
+): AgentToolResult<ExpandableOutputDetails> {
+	const { contentText, details } = buildOutput(text);
+	return {
+		content: [{ type: "text", text: contentText }],
+		details,
+	};
 }
 
 export function buildExpandableTailOutput(text: string): {
@@ -252,6 +268,23 @@ type ThemedExpandableOutputDetails = {
 	readonly fullText?: string;
 	readonly renderTruncation?: TruncationResult;
 };
+
+export function renderExpandableToolResult(
+	result: { readonly details: ThemedExpandableOutputDetails },
+	options: { readonly expanded: boolean },
+	theme: Theme,
+): Text {
+	return new Text(
+		formatThemedExpandableOutput(
+			result.details,
+			options.expanded,
+			theme,
+			TOOL_RENDER_MAX_LINES,
+		),
+		0,
+		0,
+	);
+}
 
 export function formatThemedExpandableOutput(
 	details: ThemedExpandableOutputDetails,
