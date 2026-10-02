@@ -22,6 +22,7 @@ import { keyText } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { formatGitFailure, runGit } from "./utils/git";
+import { extractMessageText } from "./utils/message-text";
 import { createSnapshot, type Snapshot } from "./utils/snapshot";
 import {
 	buildExpandableOutput,
@@ -380,10 +381,7 @@ async function runCommand(
 ): Promise<void> {
 	const result = await executeAction(action, state, ctx);
 	ctx.ui.notify(
-		result.content
-			.filter((content) => content.type === "text")
-			.map((content) => content.text)
-			.join("\n"),
+		extractMessageText(result.content, "\n"),
 		result.details.error ? "warning" : "info",
 	);
 	if (!result.details.error && result.details.changed && action === "undo") {

@@ -221,7 +221,7 @@ export async function createWorktree(cwd: string): Promise<WorktreeResult> {
 	let target: string | null = null;
 	try {
 		const sourceRoot = await realpath(
-			await gitOutput(["rev-parse", "--show-toplevel"], cwd),
+			await gitOutput({ args: ["rev-parse", "--show-toplevel"], cwd }),
 		);
 
 		await preparePatchDirectory(sourceRoot);
@@ -236,10 +236,10 @@ export async function createWorktree(cwd: string): Promise<WorktreeResult> {
 
 		target = await prepareDirectory(sourceRoot);
 
-		await gitOutput(
-			["worktree", "add", "--detach", target, snapshot.snapshot.commit],
-			sourceRoot,
-		);
+		await gitOutput({
+			args: ["worktree", "add", "--detach", target, snapshot.snapshot.commit],
+			cwd: sourceRoot,
+		});
 
 		const entries = await readIncludes(sourceRoot);
 		await copyIncludes(sourceRoot, target, entries);
@@ -349,7 +349,12 @@ async function preparePatchDirectory(parentRoot: string): Promise<void> {
 		);
 	}
 
-	if (await gitOutput(["ls-files", "--", PATCH_DIRECTORY], parentRoot)) {
+	if (
+		await gitOutput({
+			args: ["ls-files", "--", PATCH_DIRECTORY],
+			cwd: parentRoot,
+		})
+	) {
 		throw new Error("The patch directory contains tracked files.");
 	}
 
@@ -378,7 +383,10 @@ async function writeFileAtomic(
 
 async function resolveGitCommonDirectory(cwd: string): Promise<string> {
 	return await realpath(
-		path.resolve(cwd, await gitOutput(["rev-parse", "--git-common-dir"], cwd)),
+		path.resolve(
+			cwd,
+			await gitOutput({ args: ["rev-parse", "--git-common-dir"], cwd }),
+		),
 	);
 }
 

@@ -15,6 +15,7 @@ import type {
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { BorderedLoader } from "@earendil-works/pi-coding-agent";
+import { extractMessageText } from "./message-text";
 
 const MAX_SESSION_NAME_LENGTH = 60;
 
@@ -70,10 +71,7 @@ export async function generateWithLoader(
 				return null;
 			}
 
-			return response.content
-				.filter((c): c is { type: "text"; text: string } => c.type === "text")
-				.map((c) => c.text)
-				.join("\n");
+			return extractMessageText(response.content, "\n");
 		};
 
 		run()

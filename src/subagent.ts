@@ -58,6 +58,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import { errorMessage } from "./utils/error-message";
+import { extractMessageText } from "./utils/message-text";
 import {
 	buildExpandableOutput,
 	buildExpandableTailOutput,
@@ -149,10 +150,7 @@ function getFinalOutput(messages: AgentMessage[]): string {
 		if (msg?.role !== "assistant") {
 			continue;
 		}
-		const textContent = msg.content
-			.filter((part) => part.type === "text")
-			.map((part) => part.text)
-			.join("");
+		const textContent = extractMessageText(msg.content, "");
 		if (textContent.length > 0) {
 			return textContent;
 		}

@@ -22,6 +22,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
+import { extractMessageText } from "./utils/message-text";
 import {
 	buildExpandableMiddleOutput,
 	buildExpandableTailOutput,
@@ -111,10 +112,7 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderResult(result, options, theme) {
-			const fallbackText = result.content
-				.filter((content) => content.type === "text")
-				.map((content) => content.text)
-				.join("\n");
+			const fallbackText = extractMessageText(result.content, "\n");
 			return new Text(
 				formatThemedExpandableOutput(
 					result.details ?? {},

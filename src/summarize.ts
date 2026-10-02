@@ -23,6 +23,7 @@ import type {
 	ExtensionAPI,
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
+import { extractMessageText } from "./utils/message-text";
 import {
 	deriveSessionName,
 	editAndSeedChildSession,
@@ -139,22 +140,11 @@ function extractText(entry: SessionEntry): string {
 	}
 	const message = entry.message;
 	if (message.role === "user") {
-		const text =
-			typeof message.content === "string"
-				? message.content
-				: message.content
-						.filter((block) => block.type === "text")
-						.map((block) => block.text)
-						.join("");
-		const trimmed = text.trim();
+		const trimmed = extractMessageText(message.content, "").trim();
 		return trimmed ? `[User]: ${trimmed}` : "";
 	}
 	if (message.role === "assistant") {
-		const text = message.content
-			.filter((block) => block.type === "text")
-			.map((block) => block.text)
-			.join("")
-			.trim();
+		const text = extractMessageText(message.content, "").trim();
 		return text ? `[Assistant]: ${text}` : "";
 	}
 	if (message.role === "toolResult" && message.toolName === "ask") {

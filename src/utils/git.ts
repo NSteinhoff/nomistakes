@@ -18,13 +18,15 @@ export type GitResult = {
 
 type GitBytesResult = Omit<GitResult, "stdout"> & { readonly stdout: Buffer };
 
-export async function runGit(params: {
-	args: readonly string[];
-	cwd: string;
-	signal?: AbortSignal;
-	env?: Readonly<Record<string, string>>;
-	input?: string | Buffer;
-}): Promise<GitResult> {
+type GitParams = {
+	readonly args: readonly string[];
+	readonly cwd: string;
+	readonly signal?: AbortSignal | undefined;
+	readonly env?: Readonly<Record<string, string>> | undefined;
+	readonly input?: string | Buffer | undefined;
+};
+
+export async function runGit(params: GitParams): Promise<GitResult> {
 	const result = await runGitBytes(params);
 	return { ...result, stdout: result.stdout.toString("utf8") };
 }
@@ -35,13 +37,7 @@ export async function runGitBytes({
 	env = {},
 	input,
 	signal,
-}: {
-	args: readonly string[];
-	cwd: string;
-	signal?: AbortSignal;
-	env?: Readonly<Record<string, string>>;
-	input?: string | Buffer;
-}): Promise<GitBytesResult> {
+}: GitParams): Promise<GitBytesResult> {
 	if (signal?.aborted)
 		return { stdout: Buffer.alloc(0), stderr: "aborted", exitCode: 130 };
 
@@ -100,13 +96,10 @@ export async function runGitBytes({
 	});
 }
 
-export async function gitOutput(
-	args: readonly string[],
-	cwd: string,
-): Promise<string> {
-	const result = await runGit({ args, cwd });
+export async function gitOutput(params: GitParams): Promise<string> {
+	const result = await runGit(params);
 	if (result.exitCode !== 0) {
-		throw new Error(formatGitFailure(args.join(" "), result));
+		throw new Error(formatGitFailure(params.args.join(" "), result));
 	}
 	return result.stdout.trim();
 }
@@ -125,7 +118,10 @@ export async function gitAddExcludeRule(
 ): Promise<void> {
 	const excludeFilePath = path.resolve(
 		cwd,
-		await gitOutput(["rev-parse", "--git-path", "info/exclude"], cwd),
+		await gitOutput({
+			args: ["rev-parse", "--git-path", "info/exclude"],
+			cwd,
+		}),
 	);
 	await mkdir(path.dirname(excludeFilePath), { recursive: true });
 

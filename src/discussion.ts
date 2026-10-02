@@ -9,6 +9,7 @@ import type {
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
+import { extractMessageText } from "./utils/message-text";
 
 const STATUS_ID = "discussion";
 const BLOCKED_TOOLS = new Set<string>([
@@ -109,14 +110,7 @@ export default function discussionMode(pi: ExtensionAPI): void {
 			return;
 		}
 
-		const content = event.message.content;
-		const text =
-			typeof content === "string"
-				? content
-				: content
-						.filter((part) => part.type === "text")
-						.map((part) => part.text)
-						.join("\n");
+		const text = extractMessageText(event.message.content, "\n");
 		implementationTurn = isImplementationTurn(text);
 		updateStatus(ctx);
 	});
