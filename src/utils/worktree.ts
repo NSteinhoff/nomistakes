@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
 	cp,
-	lstat,
 	mkdir,
 	mkdtemp,
 	readFile,
@@ -14,6 +13,7 @@ import path from "node:path";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "./error-message";
+import { lstatOrNull } from "./fs";
 import {
 	formatGitFailure,
 	gitAddExcludeRule,
@@ -81,13 +81,8 @@ async function resolveLocalPath(
 ): Promise<string | null> {
 	const file = path.join(root, relativePath);
 
-	try {
-		await lstat(file);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-			return null; // File does not exist
-		}
-		throw error; // Cannot inspect file
+	if ((await lstatOrNull(file)) === null) {
+		return null;
 	}
 
 	const resolved = await realpath(file);

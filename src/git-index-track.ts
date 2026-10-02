@@ -8,7 +8,6 @@
  * - Repeating any tracking action has no additional effect.
  */
 
-import { lstat } from "node:fs/promises";
 import path from "node:path";
 import type {
 	AgentToolResult,
@@ -17,6 +16,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { errorMessage } from "./utils/error-message";
+import { lstatOrNull } from "./utils/fs";
 import { formatGitFailure, runGit } from "./utils/git";
 
 type PathState = "new" | "deleted" | "staged-deleted" | "tracked";
@@ -195,17 +195,15 @@ async function classifyPath(
 	signal?: AbortSignal,
 ): Promise<TrackedPath | string> {
 	const filePath = path.join(repoRoot, candidate);
-	const exists = await pathExists(filePath);
-	if (typeof exists === "string") return exists;
-	if (exists) {
-		try {
-			const stats = await lstat(filePath);
-			if (stats.isDirectory()) {
-				return `Invalid path '${candidate}': directories are not supported.`;
-			}
-		} catch (error) {
-			return `Cannot inspect '${candidate}': ${errorMessage(error)}`;
+	let exists: boolean;
+	try {
+		const stats = await lstatOrNull(filePath);
+		if (stats?.isDirectory()) {
+			return `Invalid path '${candidate}': directories are not supported.`;
 		}
+		exists = stats !== null;
+	} catch (error) {
+		return `Cannot inspect '${filePath}': ${errorMessage(error)}`;
 	}
 
 	const trackedResult = await runGit({
@@ -243,17 +241,6 @@ async function classifyPath(
 		return `Cannot track '${candidate}': the path does not exist and is not tracked.`;
 	}
 	return { path: candidate, state: "new" };
-}
-
-async function pathExists(filePath: string): Promise<boolean | string> {
-	try {
-		await lstat(filePath);
-		return true;
-	} catch (error) {
-		const errno = error as NodeJS.ErrnoException;
-		if (errno.code === "ENOENT") return false;
-		return `Cannot inspect '${filePath}': ${errorMessage(error)}`;
-	}
 }
 
 function formatPaths(label: string, paths: readonly string[]): string {

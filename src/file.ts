@@ -9,7 +9,7 @@
  * - Move does not create destination parent directories.
  * - Missing destination parent directories are treated as an error by design.
  */
-import { lstat, rename, rm } from "node:fs/promises";
+import { rename, rm } from "node:fs/promises";
 import path from "node:path";
 import type {
 	AgentToolResult,
@@ -20,6 +20,7 @@ import type {
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { errorMessage } from "./utils/error-message";
+import { lstatOrNull } from "./utils/fs";
 
 const moveParameters = Type.Object({
 	path: Type.String({
@@ -85,20 +86,15 @@ async function deleteFile(
 	if (!sourceInput) return textResult("'path' cannot be empty.");
 	const sourcePath = path.resolve(ctx.cwd, sourceInput);
 
-	const sourceStats = await safeLstat(sourcePath);
-	if (sourceStats.error) {
-		return textResult(
-			`Delete failed for '${sourceInput}': ${sourceStats.error.message}`,
-		);
-	}
-	if (!sourceStats.exists) {
-		return textResult(`Delete failed: file does not exist: ${sourceInput}`);
-	}
-	if (sourceStats.stats?.isDirectory()) {
-		return textResult(`Delete failed: '${sourceInput}' is a directory.`);
-	}
-
 	try {
+		const sourceStats = await lstatOrNull(sourcePath);
+		if (sourceStats === null) {
+			return textResult(`Delete failed: file does not exist: ${sourceInput}`);
+		}
+		if (sourceStats.isDirectory()) {
+			return textResult(`Delete failed: '${sourceInput}' is a directory.`);
+		}
+
 		await rm(sourcePath);
 		return textResult(`Deleted file: ${sourceInput}`);
 	} catch (error) {
@@ -121,30 +117,31 @@ async function moveFile(
 	if (!destination) return textResult("'destination' is required.");
 	const destinationPath = path.resolve(ctx.cwd, destination);
 
-	const sourceStats = await safeLstat(sourcePath);
-	if (sourceStats.error) {
+	try {
+		const sourceStats = await lstatOrNull(sourcePath);
+		if (sourceStats === null) {
+			return textResult(
+				`Move failed: source file does not exist: ${sourceInput}`,
+			);
+		}
+		if (sourceStats.isDirectory()) {
+			return textResult(`Move failed: '${sourceInput}' is a directory.`);
+		}
+	} catch (error) {
 		return textResult(
-			`Move failed for '${sourceInput}': ${sourceStats.error.message}`,
+			`Move failed for '${sourceInput}': ${errorMessage(error)}`,
 		);
-	}
-	if (!sourceStats.exists) {
-		return textResult(
-			`Move failed: source file does not exist: ${sourceInput}`,
-		);
-	}
-	if (sourceStats.stats?.isDirectory()) {
-		return textResult(`Move failed: '${sourceInput}' is a directory.`);
 	}
 
-	const destinationStats = await safeLstat(destinationPath);
-	if (destinationStats.error) {
+	try {
+		if ((await lstatOrNull(destinationPath)) !== null) {
+			return textResult(
+				`Move failed: destination already exists: ${destination}`,
+			);
+		}
+	} catch (error) {
 		return textResult(
-			`Move failed for destination '${destination}': ${destinationStats.error.message}`,
-		);
-	}
-	if (destinationStats.exists) {
-		return textResult(
-			`Move failed: destination already exists: ${destination}`,
+			`Move failed for destination '${destination}': ${errorMessage(error)}`,
 		);
 	}
 
@@ -163,22 +160,6 @@ function textResult(text: string): AgentToolResult<null> {
 		content: [{ type: "text", text }],
 		details: null,
 	};
-}
-
-async function safeLstat(target: string): Promise<{
-	exists: boolean;
-	stats?: Awaited<ReturnType<typeof lstat>>;
-	error?: Error;
-}> {
-	try {
-		const stats = await lstat(target);
-		return { exists: true, stats };
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-			return { exists: false };
-		}
-		return { exists: false, error: error as Error };
-	}
 }
 
 function renderCall(theme: Theme, toolCall: string) {
