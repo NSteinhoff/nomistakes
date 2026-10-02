@@ -36,25 +36,16 @@ async function openWorktreeSession(
 	if (ctx.model) session.appendModelChange(ctx.model.provider, ctx.model.id);
 	session.appendThinkingLevelChange(pi.getThinkingLevel());
 
-	session.appendCustomEntry(
-		WORKTREE_METADATA_TYPE,
-		createWorktreeMetadata({
-			worktreeRoot: options.root,
-			parentRoot: options.parentRoot,
-			baseCommit: options.baseCommit,
-			sessionId: session.getSessionId(),
-		}),
-	);
-
+	const metadata = createWorktreeMetadata({
+		worktreeRoot: options.root,
+		parentRoot: options.parentRoot,
+		baseCommit: options.baseCommit,
+		sessionId: session.getSessionId(),
+	});
+	session.appendCustomEntry(WORKTREE_METADATA_TYPE, metadata);
 	session.appendCustomMessageEntry(CONTEXT_TYPE, options.prompt, true);
 
-	// Read back state
-	const state = getWorktreeState(options.root, session.getEntries());
-	if (state.kind !== "worktree") {
-		throw new Error("Failed worktree session initialization.");
-	}
-
-	// Flush to disk to enable switching TUI into new session
+	// Custom context alone does not persist the session.
 	const file = await flushSessionFile(session);
 	if (file === undefined) {
 		throw new Error("No file path for the worktree session.");
@@ -63,7 +54,7 @@ async function openWorktreeSession(
 	const result = await ctx.switchSession(file, {
 		withSession: async (replacement) => {
 			replacement.ui.notify(
-				`Worktree: ${state.metadata.worktreeRoot}\nPatch: ${state.metadata.patchPath}\nSend a message to continue.`,
+				`Worktree: ${metadata.worktreeRoot}\nPatch: ${metadata.patchPath}\nSend a message to continue.`,
 				"info",
 			);
 		},

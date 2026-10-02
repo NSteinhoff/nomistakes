@@ -9,7 +9,7 @@
 
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type {
 	AgentToolResult,
@@ -484,7 +484,6 @@ async function getMakefileContents(
 ): Promise<{ path: string; contents: string } | undefined> {
 	const makefilePath = path.join(worktree, filename);
 	try {
-		await access(makefilePath);
 		const contents = await readFile(makefilePath, "utf8");
 		return { path: makefilePath, contents };
 	} catch {

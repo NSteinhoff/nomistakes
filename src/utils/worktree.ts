@@ -220,6 +220,7 @@ export async function createWorktree(cwd: string): Promise<WorktreeResult> {
 		);
 
 		await preparePatchDirectory(sourceRoot);
+		const entries = await readIncludes(sourceRoot);
 
 		const snapshot = await createSnapshot({
 			cwd: sourceRoot,
@@ -236,7 +237,6 @@ export async function createWorktree(cwd: string): Promise<WorktreeResult> {
 			cwd: sourceRoot,
 		});
 
-		const entries = await readIncludes(sourceRoot);
 		await copyIncludes(sourceRoot, target, entries);
 
 		return {

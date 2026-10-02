@@ -501,11 +501,7 @@ async function canonicalizePath(
 
 	while (true) {
 		try {
-			const stats = await lstat(current);
-			if (stats.isSymbolicLink()) {
-				const resolved = await realpath(current);
-				return path.join(resolved, ...suffixParts.reverse());
-			}
+			await lstat(current);
 			const resolved = await realpath(current);
 			return path.join(resolved, ...suffixParts.reverse());
 		} catch (error) {
