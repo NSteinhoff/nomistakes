@@ -1,6 +1,6 @@
 {
-  "formatter": {
-    "enabled": true,
-    "useEditorconfig": true
-  }
+	"formatter": {
+		"enabled": true,
+		"useEditorconfig": true
+	}
 }

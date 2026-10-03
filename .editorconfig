@@ -1,5 +1,7 @@
 root = true
 
-[**/*.json]
+# Conform to the style of the Pi managed files
+[stow/pi/.pi/agent/settings.json]
 indent_style = space
 indent_size = 2
+insert_final_newline = false

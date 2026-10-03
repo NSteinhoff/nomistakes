@@ -1,16 +1,16 @@
 {
-  "compilerOptions": {
-    "lib": ["ES2023"],
-    "target": "ES2023",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "noUncheckedIndexedAccess": true,
-    "types": ["node"]
-  },
-  "include": ["*.ts", "**/*.ts"]
+	"compilerOptions": {
+		"lib": ["ES2023"],
+		"target": "ES2023",
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"noUncheckedIndexedAccess": true,
+		"types": ["node"]
+	},
+	"include": ["*.ts", "**/*.ts"]
 }
