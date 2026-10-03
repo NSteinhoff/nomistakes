@@ -1,15 +1,19 @@
 ---
-description: Give a terse, jargon-free briefing on the critical facts
+description: Give a terse, jargon-free briefing on critical system facts
+argument-hint: "<SCOPE>"
 ---
 
-What are the most important facts I must know about what we plan to build in this
-subject scope/next phase (or after, if we completed the subject scope).
-Instead of an exhaustive list, list only the most critical things with
-implications across any existing part of the system or future part - for
-development but also end use. Every fact must be terse, direct, and stated
-without jargon. Assume I am new here, but am a capable engineer: do not use
-sloganese or chiasmus, be clear & direct and as minimally verbose as possible
-(concise but coherent).
+Give the most important facts about this scope: $ARGUMENTS
 
-Subject scope covers whatever was in discussion or planning, or what we just
-built in recent efforts.
+If no scope is supplied, use the subject of the current conversation. If neither
+defines a scope, ask for one.
+
+Use relevant repository evidence and any explicit plans in the conversation.
+Distinguish existing behavior from planned behavior. If evidence is missing,
+state the gap. Do not infer unrecorded plans or decisions.
+
+Select only facts with important implications for development, end use, or other
+parts of the system. Describe the system, not the sequence of recent events.
+
+Assume I am new to the scope but am a capable engineer. Keep each fact terse,
+direct, and jargon-free. Do not produce an exhaustive list.
