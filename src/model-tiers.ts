@@ -12,6 +12,10 @@ const MODEL_TIERS = {
 		smart: "gpt-6.1-sol",
 		ultra: "gpt-6-astra",
 	},
+	together: {
+		fast: "zai-org/GLM-5.3-Flash",
+		smart: "zai-org/GLM-5.3",
+	},
 } as const;
 
 const THINKING_LEVELS: readonly ModelThinkingLevel[] = [
