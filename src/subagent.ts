@@ -670,6 +670,7 @@ async function runSubagent({
 				appendSubagentRolePrompt(base, agent.systemPrompt),
 		});
 		await resourceLoader.reload();
+		settingsManager.applyOverrides({ compaction: { enabled: true } });
 		const sessionResult = await createAgentSession({
 			cwd,
 			sessionManager: SessionManager.inMemory(),
