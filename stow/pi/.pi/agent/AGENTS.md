@@ -7,17 +7,6 @@
   programming-language or style-guide skill that matches the file's language,
   and follow its conventions.
 
-## Filesystem Boundary
-
-- Treat the current working directory as the file boundary.
-- Do not call file tools outside the current working directory. Do not probe
-  parent directories or retry blocked external paths.
-- Use a read-only external path only when system instructions name it or tool
-  output supplies it for recovery.
-- A user-supplied external path does not authorize access.
-- If access is blocked, state the required file or permitted location. Do not
-  search for alternatives outside the boundary.
-
 ## Configuration
 
 - Define each configurable value in one authority.
