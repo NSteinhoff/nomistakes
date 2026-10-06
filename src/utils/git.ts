@@ -80,11 +80,16 @@ export async function runGitBytes({
 				exitCode: 1,
 			});
 		});
-		proc.on("close", (code) => {
+		proc.on("close", (code, terminationSignal) => {
+			const stderr = decodeStderr();
 			settle({
 				stdout: collectStdout(),
-				stderr: decodeStderr(),
-				exitCode: code ?? 0,
+				stderr: terminationSignal
+					? [stderr, `git terminated by signal ${terminationSignal}`]
+							.filter(Boolean)
+							.join("\n")
+					: stderr,
+				exitCode: code ?? 1,
 			});
 		});
 		if (input !== undefined) {

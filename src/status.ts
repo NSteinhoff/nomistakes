@@ -640,9 +640,8 @@ function parsePorcelainV1ZStatus(content: string): {
 		if (y !== " ") unstaged += 1;
 
 		if ((x === "R" || x === "C") && i + 1 < entries.length) {
-			const renamedFrom = pathPart;
-			const nextPath = entries[i + 1] ?? "";
-			files.push({ code, renamedFrom, path: nextPath });
+			const renamedFrom = entries[i + 1] ?? "";
+			files.push({ code, renamedFrom, path: pathPart });
 			i += 1;
 			continue;
 		}

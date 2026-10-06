@@ -16,9 +16,9 @@ description: >
   ///////////////////////////////////////////////////////////////////////////////
   /// SHA-256
   ```
-- When you declare a function that takes buffer arguments, prefer the VLA style
-  notation, for example `foo(usize size, char buf[size])`, which places the size
-  parameter before the buffer parameter.
+- When you declare a function that takes destination buffer arguments, prefer
+  the VLA style notation, for example `foo(usize size, char buf[size])`, which
+  places the size parameter before the buffer parameter.
 - Be consistent with the names `len`, `size`, `cap`, `count`
   - len: the length of a sequence (string)
   - size: the size in bytes of an allocation or object (sizeof object)

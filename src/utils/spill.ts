@@ -1,39 +1,61 @@
-/**
- * Spills complete tool output to a temp file so the agent can recover it in
- * full (via `read`) when the in-context view is truncated.
- *
- * Invariants:
- * - Files live under a single tmpdir subtree (SPILL_DIR) so the path-guard can
- *   grant a narrow read-only exception for it.
- * - Best-effort: every failure degrades to "no spill", never throws.
- */
+/** Preserves complete tool output for recovery through a narrow read exception. */
 
 import {
+	closeSync,
+	constants,
+	fchmodSync,
+	fstatSync,
 	mkdirSync,
+	openSync,
 	readdirSync,
+	realpathSync,
 	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
-export const SPILL_DIR = path.join(tmpdir(), "pi-agent-spill");
-
-// Created eagerly at module load: the path-guard allowlist realpath-resolves
-// its bases at load and drops missing ones, so SPILL_DIR must exist before that
-// array is built for the read exception to take effect.
-try {
-	mkdirSync(SPILL_DIR, { recursive: true });
-} catch {
-	// Best-effort; spill is a non-critical recovery aid.
-}
-
+const DIRECTORY_MODE = 0o700;
+const FILE_MODE = 0o600;
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-// Drops spill files older than MAX_AGE_MS. The OS reclaims tmpdir on reboot;
-// this bounds growth within a long-lived session host between reboots.
+// Initialize before the path policy resolves its read exception.
+export const SPILL_DIR = prepareSpillDir(path.join(getAgentDir(), "spill"));
+
+function prepareSpillDir(directory: string): string | undefined {
+	let descriptor: number | undefined;
+	try {
+		const uid = process.getuid?.();
+		if (uid === undefined) return undefined;
+		mkdirSync(directory, { recursive: true, mode: DIRECTORY_MODE });
+		descriptor = openSync(
+			directory,
+			constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+		);
+		const stats = fstatSync(descriptor);
+		if (!stats.isDirectory() || stats.uid !== uid) return undefined;
+		// Use the descriptor so permission changes cannot follow a replaced symlink.
+		fchmodSync(descriptor, DIRECTORY_MODE);
+		if ((fstatSync(descriptor).mode & 0o777) !== DIRECTORY_MODE)
+			return undefined;
+		return realpathSync(directory);
+	} catch {
+		return undefined;
+	} finally {
+		if (descriptor !== undefined) {
+			try {
+				closeSync(descriptor);
+			} catch {
+				// Spill recovery remains optional when descriptor cleanup fails.
+			}
+		}
+	}
+}
+
+// Bound disk use without invalidation at session shutdown.
 export function pruneSpillDir(): void {
+	if (!SPILL_DIR || prepareSpillDir(SPILL_DIR) !== SPILL_DIR) return;
 	let entries: string[];
 	try {
 		entries = readdirSync(SPILL_DIR);
@@ -53,12 +75,16 @@ export function pruneSpillDir(): void {
 	}
 }
 
-// Writes the complete output and returns the path, or undefined on failure.
 export function writeSpillFile(text: string): string | undefined {
+	if (!SPILL_DIR || prepareSpillDir(SPILL_DIR) !== SPILL_DIR) return undefined;
 	try {
 		const name = `spill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.log`;
 		const file = path.join(SPILL_DIR, name);
-		writeFileSync(file, text, "utf8");
+		writeFileSync(file, text, {
+			encoding: "utf8",
+			flag: "wx",
+			mode: FILE_MODE,
+		});
 		return file;
 	} catch {
 		return undefined;

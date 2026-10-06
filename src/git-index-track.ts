@@ -119,7 +119,7 @@ async function execute(
 
 	if (added.length > 0) {
 		const addResult = await runGit({
-			args: ["add", "-N", "--", ...added],
+			args: ["--literal-pathspecs", "add", "-N", "--", ...added],
 			cwd: repoRoot,
 			signal,
 		});
@@ -133,7 +133,7 @@ async function execute(
 	}
 	if (deletionsToStage.length > 0) {
 		const deleteResult = await runGit({
-			args: ["add", "-u", "--", ...deletionsToStage],
+			args: ["--literal-pathspecs", "add", "-u", "--", ...deletionsToStage],
 			cwd: repoRoot,
 			signal,
 		});
@@ -207,7 +207,13 @@ async function classifyPath(
 	}
 
 	const trackedResult = await runGit({
-		args: ["ls-files", "--error-unmatch", "--", candidate],
+		args: [
+			"--literal-pathspecs",
+			"ls-files",
+			"--error-unmatch",
+			"--",
+			candidate,
+		],
 		cwd: repoRoot,
 		signal,
 	});
@@ -220,6 +226,7 @@ async function classifyPath(
 	if (!exists) {
 		const stagedDeletionResult = await runGit({
 			args: [
+				"--literal-pathspecs",
 				"diff",
 				"--cached",
 				"--no-renames",

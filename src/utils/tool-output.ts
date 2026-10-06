@@ -138,8 +138,8 @@ function truncateMiddle(
 
 	const hiddenLines = totalLines - head.outputLines - tail.outputLines;
 	if (hiddenLines <= 0) {
-		// Head and tail slices already span the whole input; nothing to elide.
-		return result(text, false, null);
+		// Partial lines can hide omitted bytes without an omitted line.
+		return truncateTail(text, options);
 	}
 
 	const headContent = head.content.replace(/\n+$/g, "");

@@ -37,10 +37,11 @@ import type {
 	AgentMessage,
 	ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 import type {
 	AgentSession,
 	ModelRegistry,
+	SessionEntry,
 	Theme,
 	ThemeColor,
 } from "@earendil-works/pi-coding-agent";
@@ -104,6 +105,7 @@ interface SubagentResult {
 	durationMs?: number;
 	costUsd?: number;
 	contextTokens?: number;
+	usage?: Usage | undefined;
 }
 
 type SubagentPhase =
@@ -569,6 +571,7 @@ async function runSubagent({
 	let thinkingLevel: string | undefined;
 	let costUsd: number | undefined;
 	let contextTokens: number | undefined;
+	let usage: Usage | undefined;
 
 	const emitUpdate = (nextPhase: SubagentPhase) => {
 		if (!onUpdate || updatesDisabled) return;
@@ -827,12 +830,10 @@ async function runSubagent({
 		clearUpdateTimer();
 		unsubscribe?.();
 		messages = session?.messages ?? [];
-		// Read stats before dispose. Cumulative session cost equals this run's cost
-		// (fresh in-memory session); 0 means unknown/unpriced, so treat it as absent.
-		// contextUsage.tokens is the estimated final context size and is null right
-		// after an internal compaction.
+		// Raw entries retain usage that compaction removes from model context.
+		usage = aggregateSessionUsage(session?.sessionManager.getEntries() ?? []);
 		const stats = session?.getSessionStats();
-		const sessionCost = stats?.cost;
+		const sessionCost = usage?.cost.total;
 		costUsd = sessionCost && sessionCost > 0 ? sessionCost : undefined;
 		contextTokens = stats?.contextUsage?.tokens ?? undefined;
 		session?.dispose();
@@ -854,7 +855,52 @@ async function runSubagent({
 		durationMs: Date.now() - startedAt,
 		costUsd,
 		contextTokens,
+		usage,
 	};
+}
+
+function aggregateSessionUsage(
+	entries: readonly SessionEntry[],
+): Usage | undefined {
+	let total: Usage | undefined;
+	for (const entry of entries) {
+		let usage: Usage | undefined;
+		if (
+			entry.type === "usage" ||
+			entry.type === "compaction" ||
+			entry.type === "branch_summary"
+		) {
+			usage = entry.usage;
+		} else if (
+			entry.type === "message" &&
+			(entry.message.role === "assistant" ||
+				entry.message.role === "toolResult")
+		) {
+			usage = entry.message.usage;
+		}
+		if (!usage) continue;
+		if (!total) {
+			total = { ...usage, cost: { ...usage.cost } };
+			continue;
+		}
+		total.input += usage.input;
+		total.output += usage.output;
+		total.cacheRead += usage.cacheRead;
+		total.cacheWrite += usage.cacheWrite;
+		total.totalTokens += usage.totalTokens;
+		if (usage.cacheWrite1h !== undefined) {
+			total.cacheWrite1h = (total.cacheWrite1h ?? 0) + usage.cacheWrite1h;
+		}
+		if (usage.reasoning !== undefined) {
+			total.reasoning = (total.reasoning ?? 0) + usage.reasoning;
+		}
+		total.cost.input += usage.cost.input;
+		total.cost.output += usage.cost.output;
+		total.cost.cacheRead += usage.cost.cacheRead;
+		total.cost.cacheWrite += usage.cost.cacheWrite;
+		total.cost.total += usage.cost.total;
+	}
+	return total;
 }
 
 interface ExecuteSubagentArgs {
@@ -876,6 +922,7 @@ interface ExecuteSubagentOutput {
 	content: { type: "text"; text: string }[];
 	details: SubagentToolDetails;
 	isError?: boolean;
+	usage?: Usage | undefined;
 }
 
 function isErrorOutcome(outcome: {
@@ -905,6 +952,7 @@ async function execute(
 		return {
 			content: [{ type: "text", text: output.contentText }],
 			details: buildSubagentToolDetails(result, output),
+			usage: result.usage,
 			isError: true,
 		};
 	}
@@ -914,6 +962,7 @@ async function execute(
 	return {
 		content: [{ type: "text", text: output.contentText }],
 		details: buildSubagentToolDetails(result, output),
+		usage: result.usage,
 	};
 }
 

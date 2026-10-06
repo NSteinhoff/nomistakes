@@ -85,7 +85,7 @@ const EXTERNAL_READ_ALLOWLIST_BASES = [
 	path.join(agentDir, "agents"),
 	// Read-only recovery of full tool output (see utils/spill.ts). Mutating tools
 	// stay blocked here; only the tools themselves write into this directory.
-	SPILL_DIR,
+	...(SPILL_DIR ? [SPILL_DIR] : []),
 ]
 	.map(resolveRealpath)
 	.filter((base): base is string => base !== undefined);
@@ -178,6 +178,9 @@ export default function (pi: ExtensionAPI) {
 				policyPath,
 			);
 			const allowedHiddenPath =
+				(allowedExternalRead &&
+					SPILL_DIR !== undefined &&
+					isWithinBase(SPILL_DIR, policyPath)) ||
 				isAllowedHiddenPath(ctx.cwd, policyPath) ||
 				isAllowedHiddenPath(ctx.cwd, resolved);
 			const protectedMutation =
