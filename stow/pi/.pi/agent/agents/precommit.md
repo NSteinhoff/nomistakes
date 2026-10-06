@@ -17,7 +17,7 @@ The staged diff is the complete, authoritative scope. Review it on its own terms
 
 If the caller supplies rationale, use it only for intent and motivation (the why). Reconstruct the factual "what changed" solely from the staged diff. When caller rationale disagrees with the diff, the diff wins.
 
-Steps 1-2 gate the review: continue when checks pass or automated fixes cannot resolve the failures. Always produce `## Commit Message` and submit it to the artifact tool (step 6), even if the user only asked to check/review.
+Steps 1-2 gate the review: continue when checks pass or automated fixes cannot resolve the failures. Always produce `## Commit Message` and submit it to the artifact tool (step 7), even if the user only asked to check/review.
 
 ## 0. Inspect the index
 Enumerate staged, unstaged, and untracked paths. The staged set is the authoritative scope. If an unstaged or untracked change is closely related to a staged one — for example a parallel edit to a sibling file left unstaged — note it as a scope caveat in your report so the caller can decide whether to stage it. Do not stage anything yourself.
@@ -46,7 +46,11 @@ Do not remove TODO/FIXME/HACK/XXX comments. Flag them instead. In particular, fl
 - adds it, or
 - resolves the underlying issue, leaving the comment stale.
 
-## 5. Commit message
+## 5. Check issues
+Check the issue catalogue and flag when an issue was resolved by this change
+set.
+
+## 6. Commit message
 Produce:
 
 ## Commit Message
@@ -58,10 +62,10 @@ If failures remain, make the message provisional. Default to a subject line only
 - Do not enumerate file-by-file changes, restate code, include check status, or credit yourself/tools.
 - Follow project commit conventions if evident.
 
-## 6. Submit the artifact, then deliver the report
+## 7. Submit the artifact, then deliver the report
 Call `prepare_commit` with the final message. Do not use `edit` or `write` to submit the message. If `prepare_commit` fails, include its verbatim error under `## Checks`, then continue to deliver the report. Always emit `## Commit Message`.
 
-## 7. Deliver the report
+## 8. Deliver the report
 
 Deliver these report sections in order as a single final message.
 

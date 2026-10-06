@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.0.2",
+  "lastChangelogVersion": "1.0.4",
   "defaultProvider": "openai-codex",
   "defaultModel": "smart",
   "defaultThinkingLevel": "medium",
@@ -8,18 +8,18 @@
     "openai-codex/smart",
     "openai-codex/ultra"
   ],
-  "hideThinkingBlock": false,
-  "terminal": {
-    "showTerminalProgress": true
-  },
-  "quietStartup": false,
+  "hideThinkingBlock": true,
+  "quietStartup": "header",
   "collapseChangelog": false,
   "enableInstallTelemetry": false,
   "treeFilterMode": "no-tools",
   "theme": "system",
+  "tuiMode": "fullscreen",
+  "cacheWarming": "idle",
   "compaction": {
     "enabled": false
   },
-  "tuiMode": "regular",
-  "cacheWarming": "idle"
+  "terminal": {
+    "showTerminalProgress": true
+  }
 }

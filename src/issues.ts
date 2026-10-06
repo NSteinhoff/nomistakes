@@ -1,13 +1,6 @@
-/**
- * Manages deterministic I/O for the issues-analysis workflow.
- *
- * Invariants:
- * - The model owns judgment; this tool owns validation, layout, and cleanup.
- * - `context` analyzes the working tree, including untracked files.
- * - `write` replaces the complete issues set and details directory.
- */
+/** Preserves untouched issues across incremental analysis. */
 
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
 	AgentToolResult,
@@ -16,7 +9,8 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
-import { runGit } from "./utils/git";
+import { lstatOrNull } from "./utils/fs";
+import { formatGitFailure, runGit } from "./utils/git";
 import {
 	type ExpandableOutputDetails,
 	renderExpandableToolResult,
@@ -25,7 +19,7 @@ import {
 
 type ToolDetails = ExpandableOutputDetails;
 
-const ACTIONS = ["context", "write"] as const;
+const ACTIONS = ["context", "apply"] as const;
 type Action = (typeof ACTIONS)[number];
 
 // Forward slashes: these double as git pathspecs (which reject backslashes) and
@@ -48,7 +42,7 @@ const HEADLINE_MAX = 120;
 
 const DESCRIPTION = [
 	"Manage the issues catalog workflow.",
-	"context returns the prior index commit, changed files (with working-tree changes), and current index. write replaces the full catalog.",
+	"context returns the prior index commit, changed files (with working-tree changes), and current index. apply adds, updates, or removes explicit issues and refreshes the analysis timestamp. Omitted issues and fields remain unchanged.",
 ];
 
 const issueEntrySchema = Type.Object({
@@ -88,17 +82,56 @@ const issueEntrySchema = Type.Object({
 
 type IssueEntry = Static<typeof issueEntrySchema>;
 
-const parameters = Type.Object({
-	action: Type.String({
-		description: "context or write.",
-	}),
-	entries: Type.Optional(
-		Type.Array(issueEntrySchema, {
-			description:
-				"For write: complete issue set. [] writes a clean index and deletes omissions.",
-		}),
-	),
+const PROSE_SECTIONS = [
+	{ field: "rationale", heading: "Rationale" },
+	{ field: "context", heading: "Context" },
+	{ field: "evidence", heading: "Evidence" },
+	{ field: "notes", heading: "Notes" },
+] as const;
+type ProseField = (typeof PROSE_SECTIONS)[number]["field"];
+type MarkdownBoundary = { field: ProseField; start: number; end: number };
+type Catalog = {
+	entries: Map<string, IssueEntry>;
+	ambiguous: Set<string>;
+};
+
+const issueChangesSchema = Type.Partial(Type.Omit(issueEntrySchema, ["id"]), {
+	additionalProperties: false,
 });
+
+const parameters = Type.Object(
+	{
+		action: Type.Union([Type.Literal(ACTIONS[0]), Type.Literal(ACTIONS[1])]),
+		add: Type.Optional(
+			Type.Array(issueEntrySchema, {
+				description:
+					"Complete new issues. Each ID must be absent from the catalog.",
+			}),
+		),
+		update: Type.Optional(
+			Type.Array(
+				Type.Object(
+					{
+						id: issueEntrySchema.properties.id,
+						changes: issueChangesSchema,
+					},
+					{ additionalProperties: false },
+				),
+				{
+					description:
+						"Updates to existing IDs. Omitted fields remain unchanged. Use empty notes to remove notes.",
+				},
+			),
+		),
+		remove: Type.Optional(
+			Type.Array(issueEntrySchema.properties.id, {
+				description:
+					"Existing issue IDs to remove. Omitted IDs remain unchanged.",
+			}),
+		),
+	},
+	{ additionalProperties: false },
+);
 
 export default function (pi: ExtensionAPI) {
 	pi.registerTool<typeof parameters, ToolDetails>({
@@ -106,8 +139,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Issues",
 		description: DESCRIPTION.join(" "),
 		parameters,
-		// write nukes and rewrites issues/details/; concurrent calls touching
-		// the shared issues state would corrupt it.
+		// Each delta depends on the catalog state from the previous call.
 		executionMode: "sequential",
 		renderCall(args, theme) {
 			const action = args.action?.trim().toLowerCase() || "(none)";
@@ -134,8 +166,8 @@ const execute = async (
 	switch (action) {
 		case "context":
 			return textResult(await renderContext(worktree, signal));
-		case "write":
-			return textResult(await renderWrite(worktree, params.entries));
+		case "apply":
+			return textResult(await renderApply(worktree, params));
 		default:
 			return textResult(
 				`Unknown action '${params.action ?? ""}'. Supported actions: ${ACTIONS.join(", ")}.`,
@@ -152,7 +184,10 @@ async function renderContext(
 		cwd: worktree,
 		signal,
 	});
-	if (repoCheck.exitCode !== 0 || repoCheck.stdout.trim() !== "true") {
+	if (repoCheck.exitCode !== 0) {
+		return formatGitFailure("rev-parse --is-inside-work-tree", repoCheck);
+	}
+	if (repoCheck.stdout.trim() !== "true") {
 		return `Not a git repository in the current worktree (${worktree}).`;
 	}
 
@@ -161,7 +196,10 @@ async function renderContext(
 		cwd: worktree,
 		signal,
 	});
-	const prev = prevRes.exitCode === 0 ? prevRes.stdout.trim() : "";
+	if (prevRes.exitCode !== 0) {
+		return formatGitFailure(`log -1 --format=%H -- ${INDEX_REL}`, prevRes);
+	}
+	const prev = prevRes.stdout.trim();
 	const fresh = prev.length === 0;
 
 	let changed = "";
@@ -174,8 +212,13 @@ async function renderContext(
 			cwd: worktree,
 			signal,
 		});
-		const diffChanged =
-			changedRes.exitCode === 0 ? changedRes.stdout.trim() : "";
+		if (changedRes.exitCode !== 0) {
+			return formatGitFailure(
+				`diff --name-status ${prev} -- . :(exclude)issues/`,
+				changedRes,
+			);
+		}
+		const diffChanged = changedRes.stdout.trim();
 		// git diff omits untracked files; list them so a pre-commit scan sees new
 		// files too. Prefix with the porcelain '??' code to match the diff column.
 		const untrackedRes = await runGit({
@@ -190,8 +233,13 @@ async function renderContext(
 			cwd: worktree,
 			signal,
 		});
-		const untracked =
-			untrackedRes.exitCode === 0 ? untrackedRes.stdout.trim() : "";
+		if (untrackedRes.exitCode !== 0) {
+			return formatGitFailure(
+				"ls-files --others --exclude-standard -- . :(exclude)issues/",
+				untrackedRes,
+			);
+		}
+		const untracked = untrackedRes.stdout.trim();
 		const untrackedLines = untracked
 			? untracked
 					.split(/\r?\n/)
@@ -201,6 +249,8 @@ async function renderContext(
 		changed = [diffChanged, untrackedLines].filter(Boolean).join("\n");
 	}
 
+	const pathError = await validateCatalogPaths(worktree, ["issues", INDEX_REL]);
+	if (pathError) return pathError;
 	const indexText = await readFileMaybe(path.join(worktree, INDEX_REL));
 
 	const lines: string[] = [];
@@ -232,48 +282,396 @@ async function renderContext(
 	return lines.join("\n");
 }
 
-async function renderWrite(
+async function renderApply(
 	worktree: string,
-	entries: IssueEntry[] | undefined,
+	params: Static<typeof parameters>,
 ): Promise<string> {
-	if (!entries) {
-		return "action=write requires an 'entries' array (use [] to write a clean index).";
-	}
-
-	const violations = validateEntries(entries);
+	const catalog = await loadCatalog(worktree);
+	if (typeof catalog === "string")
+		return `Cannot apply (no files written): ${catalog}`;
+	const current = catalog.entries;
+	const { entries, violations } = buildDelta(catalog, params);
 	if (violations.length > 0) {
 		return [
-			`Cannot write: ${violations.length} violation(s) (no files written):`,
+			`Cannot apply: ${violations.length} violation(s) (no files written):`,
 			"",
 			...violations.map((v) => `- ${v}`),
 		].join("\n");
 	}
+	const changed = entries.filter((entry) => {
+		const previous = current.get(entry.id);
+		return !previous || buildDetail(entry) !== buildDetail(previous);
+	});
+	await persistDelta(
+		worktree,
+		changed,
+		params.remove ?? [],
+		buildIndex(entries, new Date().toISOString()),
+	);
+	const updated = changed.filter((entry) => current.has(entry.id)).length;
+	return renderApplySummary(
+		entries,
+		params.add?.length ?? 0,
+		updated,
+		params.remove?.length ?? 0,
+	);
+}
 
-	const detailsDir = path.join(worktree, DETAILS_REL);
-	// These writes bypass the tools.ts path-guard (getPathInputs has no issues
-	// branch). Staying inside worktree/issues/ is guaranteed here by fixed
-	// targets plus validateEntries, which rejects ids and paths that could escape
-	// (ID_PATTERN forbids slashes/dots; path validation forbids absolute and
-	// '..'). Preserve that invariant if these targets ever become dynamic.
-	//
-	// Nuke-and-pave: the passed set is the entire issues state, so wipe the
-	// details directory before writing rather than diffing for orphans.
-	await rm(detailsDir, { recursive: true, force: true });
-	await mkdir(detailsDir, { recursive: true });
-
-	for (const entry of entries) {
-		const target = path.join(detailsDir, `${entry.id}.md`);
-		await writeFile(target, buildDetail(entry), "utf8");
+function buildDelta(
+	catalog: Catalog,
+	params: Static<typeof parameters>,
+): { entries: IssueEntry[]; violations: string[] } {
+	const current = catalog.entries;
+	const add = params.add ?? [];
+	const update = params.update ?? [];
+	const remove = params.remove ?? [];
+	const next = new Map(current);
+	const violations: string[] = [];
+	const seen = new Set<string>();
+	for (const id of [
+		...add.map((entry) => entry.id),
+		...update.map((entry) => entry.id),
+		...remove,
+	]) {
+		if (!ID_PATTERN.test(id)) violations.push(`invalid id '${id}'.`);
+		if (seen.has(id))
+			violations.push(`duplicate or conflicting operation for '${id}'.`);
+		seen.add(id);
 	}
+	for (const entry of add) {
+		if (current.has(entry.id))
+			violations.push(`cannot add existing issue '${entry.id}'.`);
+		violations.push(...validateProse(entry.id, entry));
+		next.set(entry.id, entry);
+	}
+	for (const { id, changes } of update) {
+		const entry = current.get(id);
+		if (!entry) {
+			violations.push(`cannot update unknown issue '${id}'.`);
+			continue;
+		}
+		if (catalog.ambiguous.has(id)) {
+			violations.push(
+				`cannot update '${id}': existing Markdown field boundaries are ambiguous.`,
+			);
+			continue;
+		}
+		violations.push(...validateProse(id, changes));
+		next.set(id, { ...entry, ...changes });
+	}
+	for (const id of remove) {
+		if (!current.has(id))
+			violations.push(`cannot remove unknown issue '${id}'.`);
+		next.delete(id);
+	}
+	const entries = [...next.values()];
+	violations.push(...validateEntries(entries));
+	return { entries, violations };
+}
 
-	await writeFile(path.join(worktree, INDEX_REL), buildIndex(entries), "utf8");
-
-	const lines = [`Wrote ${INDEX_REL} and ${entries.length} detail file(s).`];
+function renderApplySummary(
+	entries: IssueEntry[],
+	added: number,
+	updated: number,
+	removed: number,
+): string {
+	const lines = [
+		`Applied ${added} addition(s), ${updated} update(s), and ${removed} removal(s). Refreshed ${INDEX_REL}.`,
+	];
 	for (const { heading, kind } of SECTION_KINDS) {
 		const count = entries.filter((entry) => entry.kind === kind).length;
 		if (count > 0) lines.push(`  ${heading}: ${count}`);
 	}
 	return lines.join("\n");
+}
+
+async function persistDelta(
+	worktree: string,
+	changed: IssueEntry[],
+	remove: string[],
+	index: string,
+): Promise<void> {
+	const detailsDir = path.join(worktree, DETAILS_REL);
+	const indexPath = path.join(worktree, INDEX_REL);
+	const originalIndex = await readFileMaybe(indexPath);
+	const originals = new Map<string, string | undefined>();
+	for (const id of [...changed.map((entry) => entry.id), ...remove]) {
+		const target = path.join(detailsDir, `${id}.md`);
+		const stats = await lstatOrNull(target);
+		if (stats && !stats.isFile())
+			throw new Error(`Not a regular detail file: ${target}`);
+		originals.set(target, await readFileMaybe(target));
+	}
+	await mkdir(detailsDir, { recursive: true });
+	try {
+		for (const entry of changed) {
+			await writeFile(
+				path.join(detailsDir, `${entry.id}.md`),
+				buildDetail(entry),
+				"utf8",
+			);
+		}
+		for (const id of remove) await rm(path.join(detailsDir, `${id}.md`));
+		await writeFile(indexPath, index, "utf8");
+	} catch (error) {
+		const errors: unknown[] = [error];
+		try {
+			if ((await readFileMaybe(indexPath)) !== originalIndex) {
+				if (originalIndex === undefined) await rm(indexPath, { force: true });
+				else await writeFile(indexPath, originalIndex, "utf8");
+			}
+		} catch (restoreError) {
+			errors.push(restoreError);
+		}
+		for (const [target, original] of originals) {
+			try {
+				if (original === undefined) await rm(target, { force: true });
+				else await writeFile(target, original, "utf8");
+			} catch (restoreError) {
+				errors.push(restoreError);
+			}
+		}
+		throw new AggregateError(
+			errors,
+			"Catalog write failed. Detail restoration errors follow the original error, if any.",
+		);
+	}
+}
+
+async function validateCatalogPaths(
+	worktree: string,
+	relatives: readonly string[],
+): Promise<string | undefined> {
+	for (const relative of relatives) {
+		const stats = await lstatOrNull(path.join(worktree, relative));
+		if (!stats) continue;
+		if (relative === INDEX_REL ? !stats.isFile() : !stats.isDirectory()) {
+			return `invalid catalog path '${relative}': expected a regular ${relative === INDEX_REL ? "file" : "directory"}.`;
+		}
+	}
+	return undefined;
+}
+
+async function loadCatalog(worktree: string): Promise<Catalog | string> {
+	const pathError = await validateCatalogPaths(worktree, [
+		"issues",
+		DETAILS_REL,
+		INDEX_REL,
+	]);
+	if (pathError) return pathError;
+	const entries = new Map<string, IssueEntry>();
+	const ambiguous = new Set<string>();
+	const detailsDir = path.join(worktree, DETAILS_REL);
+	let files: string[];
+	try {
+		files = await readdir(detailsDir);
+	} catch (error) {
+		if (!isMissingFile(error)) throw error;
+		files = [];
+	}
+	for (const file of files) {
+		if (!file.endsWith(".md")) continue;
+		const target = path.join(detailsDir, file);
+		const stats = await lstatOrNull(target);
+		if (!stats?.isFile())
+			return `invalid detail path '${file}': expected a regular file.`;
+		const text = await readFile(target, "utf8");
+		const parsed = parseDetail(text);
+		if (!parsed || file !== `${parsed.entry.id}.md`)
+			return `invalid detail file '${file}'.`;
+		const { entry } = parsed;
+		if (entries.has(entry.id)) return `duplicate stored issue '${entry.id}'.`;
+		entries.set(entry.id, entry);
+		if (parsed.ambiguous) ambiguous.add(entry.id);
+	}
+	const violations = validateEntries([...entries.values()]);
+	if (violations.length > 0) return violations.join("\n");
+	const index = await readFileMaybe(path.join(worktree, INDEX_REL));
+	if (
+		index !== undefined &&
+		!restoreAmbiguousRationales(index, entries, ambiguous)
+	) {
+		return "the index lacks a unique summary for an ambiguous detail file.";
+	}
+	const withoutTimestamp = (text: string): string =>
+		text
+			.replace(/\r\n/g, "\n")
+			.replace(/^---\n[\s\S]*?\n---(?=\n|$)/, (frontMatter) =>
+				frontMatter.replace(/^analyzed_at:.*\n/m, ""),
+			);
+	if (
+		index === undefined
+			? entries.size > 0
+			: withoutTimestamp(index) !==
+				withoutTimestamp(buildIndex([...entries.values()], ""))
+	) {
+		return "the index and detail files disagree. Repair the catalog before apply.";
+	}
+	return { entries, ambiguous };
+}
+
+function restoreAmbiguousRationales(
+	index: string,
+	entries: Map<string, IssueEntry>,
+	ambiguous: Set<string>,
+): boolean {
+	index = index.replace(/\r\n/g, "\n");
+	const { unfencedOffsets } = scanMarkdown(index);
+	const markers = [...entries.values()].map(
+		(entry) => `\n\n### ${entry.headline}\n\ndetails/${entry.id}.md\n\n`,
+	);
+	for (const { heading, kind } of SECTION_KINDS) {
+		const count = [...entries.values()].filter(
+			(entry) => entry.kind === kind,
+		).length;
+		if (count > 0) markers.push(`\n\n## ${heading} (${count})\n`);
+	}
+	for (const id of ambiguous) {
+		const entry = entries.get(id);
+		if (!entry) return false;
+		const marker = `\n\n### ${entry.headline}\n\ndetails/${id}.md\n\n`;
+		const start = findIndexMarker(index, marker, 0, unfencedOffsets);
+		if (
+			start < 0 ||
+			findIndexMarker(index, marker, start + marker.length, unfencedOffsets) >=
+				0
+		)
+			return false;
+		const contentStart = start + marker.length;
+		let end = index.length;
+		for (const boundary of markers) {
+			const offset = findIndexMarker(
+				index,
+				boundary,
+				contentStart,
+				unfencedOffsets,
+			);
+			if (offset >= 0) end = Math.min(end, offset);
+		}
+		entry.rationale = index.slice(contentStart, end).trim();
+	}
+	return true;
+}
+
+function findIndexMarker(
+	index: string,
+	marker: string,
+	start: number,
+	unfencedOffsets: Set<number>,
+): number {
+	let offset = index.indexOf(marker, start);
+	while (offset >= 0) {
+		if (unfencedOffsets.has(offset + 2)) return offset;
+		offset = index.indexOf(marker, offset + marker.length);
+	}
+	return -1;
+}
+
+function parseDetail(
+	text: string,
+): { entry: IssueEntry; ambiguous: boolean } | undefined {
+	text = text.replace(/\r\n/g, "\n");
+	const header =
+		/^---\nid: ([^\n]+)\nkind: ([^\n]+)\nlocation: ([^\n]+):(\d+)\n(?:entry: [^\n]*\n)?---\n\n# ([^\n]+)\n\n/.exec(
+			text,
+		);
+	if (!header) return undefined;
+	const body = text.slice(header[0].length);
+	const { boundaries, unclosedFence } = scanMarkdown(body);
+	const entry: IssueEntry = {
+		id: header[1] ?? "",
+		kind: header[2] ?? "",
+		path: header[3] ?? "",
+		line: Number(header[4]),
+		headline: header[5] ?? "",
+		rationale: "",
+		context: "",
+		evidence: "",
+	};
+	for (const { field } of PROSE_SECTIONS) {
+		const position = boundaries.findIndex(
+			(boundary) => boundary.field === field,
+		);
+		const boundary = boundaries[position];
+		if (!boundary) continue;
+		entry[field] = body
+			.slice(boundary.end, boundaries[position + 1]?.start ?? body.length)
+			.trim();
+	}
+	const expected = PROSE_SECTIONS.slice(0, boundaries.length);
+	const ambiguous =
+		unclosedFence ||
+		boundaries.length < PROSE_SECTIONS.length - 1 ||
+		boundaries.length > PROSE_SECTIONS.length ||
+		boundaries[0]?.start !== 0 ||
+		boundaries.some(
+			(boundary, index) => boundary.field !== expected[index]?.field,
+		);
+	return { entry, ambiguous };
+}
+
+function scanMarkdown(text: string): {
+	boundaries: MarkdownBoundary[];
+	unclosedFence: boolean;
+	unfencedOffsets: Set<number>;
+} {
+	const boundaries: MarkdownBoundary[] = [];
+	const unfencedOffsets = new Set<number>();
+	let fence: string | null = null;
+	let offset = 0;
+	for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+		if (fence === null) unfencedOffsets.add(offset);
+		const delimiter = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+		const marker = delimiter?.[1] ?? "";
+		const suffix = delimiter?.[2] ?? "";
+		if (fence !== null) {
+			if (
+				marker[0] === fence[0] &&
+				marker.length >= fence.length &&
+				suffix.trim() === ""
+			)
+				fence = null;
+		} else if (marker && (marker[0] !== "`" || !suffix.includes("`"))) {
+			fence = marker;
+		} else {
+			const heading = /^ {0,3}##[ \t]+(.+?)\s*$/
+				.exec(line)?.[1]
+				?.replace(/[ \t]+#+$/, "");
+			const section = PROSE_SECTIONS.find(
+				(section) => section.heading === heading,
+			);
+			if (section)
+				boundaries.push({
+					field: section.field,
+					start: offset,
+					end: offset + line.length + 1,
+				});
+		}
+		offset += line.length + 1;
+	}
+	return { boundaries, unclosedFence: fence !== null, unfencedOffsets };
+}
+
+function validateProse(id: string, changes: Partial<IssueEntry>): string[] {
+	const violations: string[] = [];
+	for (const { field } of PROSE_SECTIONS) {
+		const content = changes[field];
+		if (content === undefined) continue;
+		const { boundaries, unclosedFence } = scanMarkdown(content.trim());
+		for (const boundary of boundaries) {
+			const section = PROSE_SECTIONS.find(
+				(section) => section.field === boundary.field,
+			);
+			violations.push(
+				`issue '${id}', field '${field}': conflicting heading '## ${section?.heading}' outside a fenced code block.`,
+			);
+		}
+		if (unclosedFence)
+			violations.push(
+				`issue '${id}', field '${field}': unclosed code fence can obscure the next section.`,
+			);
+	}
+	return violations;
 }
 
 function validateEntries(entries: IssueEntry[]): string[] {
@@ -305,6 +703,26 @@ function validateEntries(entries: IssueEntry[]): string[] {
 				`invalid path '${entry.path}' for '${entry.id}': expected a repo-relative path with no '..' segments.`,
 			);
 		}
+		if (!Number.isSafeInteger(entry.line) || entry.line < 1) {
+			violations.push(
+				`invalid line for '${entry.id}': expected a positive safe integer.`,
+			);
+		}
+		if (entry.headline.length === 0) {
+			violations.push(
+				`invalid headline for '${entry.id}': expected nonempty text.`,
+			);
+		}
+		if (entry.headline.includes("\n") || entry.headline.includes("\r")) {
+			violations.push(
+				`invalid headline for '${entry.id}': expected a single line.`,
+			);
+		}
+		if (entry.path.includes("\n") || entry.path.includes("\r")) {
+			violations.push(
+				`invalid path for '${entry.id}': expected a single line.`,
+			);
+		}
 		if (entry.headline.length > HEADLINE_MAX) {
 			violations.push(
 				`headline too long for '${entry.id}': ${entry.headline.length} chars, limit ~${HEADLINE_MAX}.`,
@@ -315,13 +733,16 @@ function validateEntries(entries: IssueEntry[]): string[] {
 }
 
 function compareEntries(a: IssueEntry, b: IssueEntry): number {
-	return (
-		a.path.localeCompare(b.path) || a.line - b.line || a.id.localeCompare(b.id)
-	);
+	if (a.path < b.path) return -1;
+	if (a.path > b.path) return 1;
+	if (a.line !== b.line) return a.line - b.line;
+	if (a.id < b.id) return -1;
+	if (a.id > b.id) return 1;
+	return 0;
 }
 
-function buildIndex(entries: IssueEntry[]): string {
-	const lines: string[] = ["---", "counts:"];
+function buildIndex(entries: IssueEntry[], analyzedAt: string): string {
+	const lines: string[] = ["---", `analyzed_at: ${analyzedAt}`, "counts:"];
 	for (const { kind } of SECTION_KINDS) {
 		const count = entries.filter((entry) => entry.kind === kind).length;
 		lines.push(`  ${kind}: ${count}`);
@@ -358,27 +779,26 @@ function buildDetail(entry: IssueEntry): string {
 		"---",
 		"",
 		`# ${entry.headline}`,
-		"",
-		"## Rationale",
-		entry.rationale.trim(),
-		"",
-		"## Context",
-		entry.context.trim(),
-		"",
-		"## Evidence",
-		entry.evidence.trim(),
 	];
-	const notes = entry.notes?.trim();
-	if (notes) lines.push("", "## Notes", notes);
+	for (const { field, heading } of PROSE_SECTIONS) {
+		const content = entry[field]?.trim() ?? "";
+		if (field === "notes" && !content) continue;
+		lines.push("", `## ${heading}`, content);
+	}
 	return `${lines.join("\n")}\n`;
 }
 
 async function readFileMaybe(file: string): Promise<string | undefined> {
 	try {
 		return await readFile(file, "utf8");
-	} catch {
+	} catch (error) {
+		if (!isMissingFile(error)) throw error;
 		return undefined;
 	}
+}
+
+function isMissingFile(error: unknown): boolean {
+	return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 function indent(text: string): string {
