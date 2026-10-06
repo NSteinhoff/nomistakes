@@ -21,7 +21,7 @@ import type {
 import { keyText } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
-import { formatGitFailure, runGit } from "./utils/git";
+import { formatGitFailure, runGit, runGitBytes } from "./utils/git";
 import { extractMessageText } from "./utils/message-text";
 import { createSnapshot, type Snapshot } from "./utils/snapshot";
 import {
@@ -677,7 +677,7 @@ async function restoreToSnapshot(
 		};
 	}
 
-	const patch = await runGit({
+	const patch = await runGitBytes({
 		args: [
 			"diff",
 			"--binary",
@@ -689,9 +689,15 @@ async function restoreToSnapshot(
 		signal,
 	});
 	if (patch.exitCode !== 0) {
-		return { ok: false, error: formatGitFailure("diff --binary", patch) };
+		return {
+			ok: false,
+			error: formatGitFailure("diff --binary", {
+				...patch,
+				stdout: patch.stdout.toString("utf8"),
+			}),
+		};
 	}
-	if (!patch.stdout.trim()) {
+	if (patch.stdout.length === 0) {
 		return { ok: true, changed: false, liveSnapshot: live.snapshot };
 	}
 

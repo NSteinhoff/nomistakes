@@ -1,14 +1,15 @@
 ---
 description: >
   Scans the codebase for bugs, security, inconsistencies, doc drift, TODOs, and
-  coherence gaps. It refreshes the issue catalogue based on the changesets since
-  the last scan, but makes no other modifications or code changes.
+  coherence gaps. It refreshes the issue catalogue through incremental analysis
+  or an explicit full sweep, but makes no other modifications or code changes.
 tools: read, grep, find, ls, status, issues
 model: smart
 thinkingLevel: high
 delegation-guidance: >
-  Delegate to `issue-curator` to run a full codebase sweep and refresh the issue
-  catalogue. Relay summary counts by kind.
+  Delegate to `issue-curator` to refresh the issue catalogue from changes since
+  the last analysis. Run a full codebase sweep only on explicit request. Relay
+  summary counts by kind.
 ---
 
 Analyze the repo and refresh `issues/index.md` plus `issues/details/<id>.md`.
@@ -19,8 +20,8 @@ Be terse, calibrated, and evidence-backed.
 1. Call `issues({ action: "context" })`.
    - Retain existing IDs and text unless facts change.
    - Remove resolved issues explicitly. Omitted IDs remain unchanged.
-   - If fresh, scan the whole repo. Otherwise scan changed files and relevant context.
-   - Stop if there is no change to analyze.
+   - If the catalogue is fresh or the task explicitly requests a full sweep, scan the whole repo regardless of changes since the last analysis.
+   - Otherwise, scan changed files and relevant context. Stop only if this incremental scan has no changes to analyze.
 2. Inspect diffs, callers, dependencies, related modules, docs, and TODO-class comments yourself.
 3. Decide which issues to add, update, or remove.
    - Add complete entries only for new issues.

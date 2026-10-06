@@ -70,6 +70,9 @@ export async function generateWithLoader(
 			if (response.stopReason === "aborted") {
 				return null;
 			}
+			if (response.stopReason === "error") {
+				throw new Error(response.errorMessage || "Provider generation failed");
+			}
 
 			return extractMessageText(response.content, "\n");
 		};

@@ -271,19 +271,32 @@ async function renderOverview(input: {
 	];
 	if (input.path) statusArgs.push("--", input.path);
 
-	const [statusRes, logRes, headTagsRes, recentTagsRes] = await Promise.all([
-		runGit({ args: statusArgs, cwd: input.worktree, signal: input.signal }),
-		runGit({
-			args: [
-				"log",
-				`-n${input.maxCommits}`,
-				"--pretty=format:%h%x09%ar%x09%d%x09%s",
-				"--decorate=short",
-				...(input.path ? ["--", input.path] : []),
-			],
-			cwd: input.worktree,
-			signal: input.signal,
-		}),
+	const statusRes = await runGit({
+		args: statusArgs,
+		cwd: input.worktree,
+		signal: input.signal,
+	});
+	if (statusRes.exitCode !== 0) {
+		return formatGitFailure(
+			"status --porcelain=v1 -z --branch --untracked-files=all",
+			statusRes,
+		);
+	}
+	const parsed = parsePorcelainV1ZStatus(statusRes.stdout);
+	const [logRes, headTagsRes, recentTagsRes] = await Promise.all([
+		parsed.branch?.initial
+			? { stdout: "", stderr: "", exitCode: 0 }
+			: runGit({
+					args: [
+						"log",
+						`-n${input.maxCommits}`,
+						"--pretty=format:%h%x09%ar%x09%d%x09%s",
+						"--decorate=short",
+						...(input.path ? ["--", input.path] : []),
+					],
+					cwd: input.worktree,
+					signal: input.signal,
+				}),
 		runGit({
 			args: ["tag", "--points-at", "HEAD", "--sort=-creatordate"],
 			cwd: input.worktree,
@@ -302,12 +315,6 @@ async function renderOverview(input: {
 		}),
 	]);
 
-	if (statusRes.exitCode !== 0) {
-		return formatGitFailure(
-			"status --porcelain=v1 -z --branch --untracked-files=all",
-			statusRes,
-		);
-	}
 	if (logRes.exitCode !== 0) {
 		return formatGitFailure("log", logRes);
 	}
@@ -327,7 +334,6 @@ async function renderOverview(input: {
 					.filter((line) => line.length > 0)
 			: [];
 
-	const parsed = parsePorcelainV1ZStatus(statusRes.stdout);
 	const lines: string[] = [];
 
 	if (parsed.branch) {

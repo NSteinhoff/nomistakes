@@ -1,4 +1,4 @@
-import { realpathSync, statSync } from "node:fs";
+import { accessSync, constants, realpathSync, statSync } from "node:fs";
 import { lstat, realpath } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
@@ -590,7 +590,27 @@ function resolveCheckedToolPath(
 		normalized = path.join(homedir(), normalized.slice(2));
 	}
 	if (/^file:\/\//.test(normalized)) normalized = fileURLToPath(normalized);
-	return path.resolve(cwd, normalized);
+	const resolved = path.resolve(cwd, normalized);
+	return toolName === "read" ? resolveReadFallback(resolved) : resolved;
+}
+
+// Match the built-in reader's fallback order before canonical path checks.
+function resolveReadFallback(resolved: string): string {
+	const nfdVariant = resolved.normalize("NFD");
+	const candidates = [
+		resolved,
+		resolved.replace(/ (AM|PM)\./gi, "\u202F$1."),
+		nfdVariant,
+		resolved.replace(/'/g, "\u2019"),
+		nfdVariant.replace(/'/g, "\u2019"),
+	];
+	for (const candidate of candidates) {
+		try {
+			accessSync(candidate, constants.F_OK);
+			return candidate;
+		} catch {}
+	}
+	return resolved;
 }
 
 function safeString(value: unknown): string {
