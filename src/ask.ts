@@ -76,6 +76,7 @@ async function promptForNonEmptyAnswer(
 export default function askUserQuestion(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "ask",
+		exposure: "model-only",
 		label: "Ask User Question",
 		description:
 			"Prompt the user via Pi UI for missing requirements, preferences, approvals, or blocking decisions. Returns the answer.",

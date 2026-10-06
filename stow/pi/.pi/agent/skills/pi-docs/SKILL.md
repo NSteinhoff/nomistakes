@@ -2,7 +2,7 @@
 name: pi-docs
 description: >
   Pi coding-agent documentation lookup. Use when asked about pi itself.
-disable-model-invocation: false
+disable-model-invocation: true
 ---
 
 # Pi Documentation

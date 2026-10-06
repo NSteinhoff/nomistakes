@@ -1,14 +1,14 @@
 ---
 description: >
-  Refreshes issues/index.md and issues/details/<id>.md for bugs, security,
-  inconsistencies, doc drift, TODOs, and coherence gaps. Uses the issues tool.
-  Fixes nothing.
+  Scans the codebase for bugs, security, inconsistencies, doc drift, TODOs, and
+  coherence gaps. It refreshes the issue catalogue based on the changesets since
+  the last scan, but makes no other modifications or code changes.
 tools: read, grep, find, ls, status, issues
 model: smart
 thinkingLevel: high
 delegation-guidance: >
-  Delegate to `issue-curator` to refresh the issue catalog through explicit
-  additions, updates, and removals. Relay summary counts by kind.
+  Delegate to `issue-curator` to run a full codebase sweep and refresh the issue
+  catalogue. Relay summary counts by kind.
 ---
 
 Analyze the repo and refresh `issues/index.md` plus `issues/details/<id>.md`.

@@ -1,6 +1,6 @@
 import { realpathSync, statSync } from "node:fs";
 import { lstat, realpath } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -41,6 +41,7 @@ const ALLOWED_TOOLS = [
 	"snapshot",
 	"todo",
 	"prepare_commit",
+	"codemode",
 ] as const;
 
 type CheckedToolName = (typeof CHECKED_TOOLS)[number];
@@ -69,6 +70,9 @@ const BUILTIN_PATH_TOOLS = new Set<CheckedToolName>([
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 
 const agentDir = path.resolve(getAgentDir());
+const CODEMODE_OUTPUT_DIR = resolveRealpath(tmpdir());
+const CODEMODE_OUTPUT_FILENAME =
+	/^pi-codemode-[0-9a-f]{16}\.(?:txt|png|jpg|gif|webp)$/;
 
 // Bases are matched against canonical paths (see canonicalizePath), so resolve
 // each to its realpath; symlinked bases (Homebrew opt/<formula>, stow-managed
@@ -106,7 +110,7 @@ const HIDDEN_PATH_ALLOWED_RELATIVE_FILES = [
 // tool may write/edit/move/delete them, in any directory. Matches e.g.
 // "Makefile", "Makefile.agent", "Makefile.something". Reuses the hidden-path
 // decision flow.
-const PROTECTED_BASENAME_PREFIXES = ["Makefile"];
+const PROTECTED_BASENAME_PREFIXES = ["Makefile", ".env"];
 type HiddenPathDecision = boolean;
 
 type HiddenPathDecisionScope = {
@@ -120,10 +124,19 @@ type HiddenPathDecisionScope = {
 // Key: sessionScope|cwd|canonicalPath, Value: true = allow, false = deny.
 const hiddenPathDecisions = new Map<string, HiddenPathDecision>();
 
+function isAllowedTool(toolName: string): toolName is AllowedToolName {
+	return ALLOWED_TOOLS.includes(toolName as AllowedToolName);
+}
+function isCheckedTool(toolName: string): toolName is CheckedToolName {
+	return CHECKED_TOOLS.includes(toolName as CheckedToolName);
+}
+
 export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (event, ctx) => {
 		pruneSpillDir();
-		setTools(pi);
+
+		const allowedTools = pi.getActiveTools().filter(isAllowedTool);
+		pi.setActiveTools(allowedTools);
 		if (event.reason !== "startup") {
 			listTools(pi, ctx);
 		}
@@ -131,6 +144,14 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("tool_call", async (event, ctx) => {
 		const toolName = event.toolName;
+
+		if (!isAllowedTool(toolName)) {
+			return {
+				block: true,
+				reason: `Calling the '${toolName}' is not allowed`,
+			};
+		}
+
 		if (!isCheckedTool(toolName)) {
 			return undefined;
 		}
@@ -358,21 +379,6 @@ function formatProtectedFilesBlock(): string {
 	return lines.join("\n");
 }
 
-function setTools(pi: ExtensionAPI) {
-	const allowedTools = pi
-		.getAllTools()
-		.map((tool) => tool.name)
-		.filter(isAllowedTool);
-	pi.setActiveTools(allowedTools);
-}
-
-function isAllowedTool(toolName: string): toolName is AllowedToolName {
-	return ALLOWED_TOOLS.includes(toolName as AllowedToolName);
-}
-function isCheckedTool(toolName: string): toolName is CheckedToolName {
-	return CHECKED_TOOLS.includes(toolName as CheckedToolName);
-}
-
 function getHiddenPathDecisionScope(
 	ctx: ExtensionContext,
 ): HiddenPathDecisionScope {
@@ -439,6 +445,14 @@ function isAllowedExternalReadPath(
 	candidatePath: string,
 ): boolean {
 	if (!READONLY_TOOLS.has(toolName)) return false;
+	if (
+		toolName === "read" &&
+		CODEMODE_OUTPUT_DIR !== undefined &&
+		path.dirname(candidatePath) === CODEMODE_OUTPUT_DIR &&
+		CODEMODE_OUTPUT_FILENAME.test(path.basename(candidatePath))
+	) {
+		return true;
+	}
 	return EXTERNAL_READ_ALLOWLIST_BASES.some((base) =>
 		isWithinBase(base, candidatePath),
 	);

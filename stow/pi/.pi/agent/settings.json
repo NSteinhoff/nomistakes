@@ -15,11 +15,13 @@
   "treeFilterMode": "no-tools",
   "theme": "system",
   "tuiMode": "fullscreen",
+  "showCacheMissNotices": true,
   "cacheWarming": "idle",
   "compaction": {
     "enabled": false
   },
   "terminal": {
     "showTerminalProgress": true
-  }
+  },
+  "defaultTools": ["+find", "+ls", "+grep", "-codemode"]
 }

@@ -42,6 +42,7 @@ const HEADLINE_MAX = 120;
 
 const DESCRIPTION = [
 	"Manage the issues catalog workflow.",
+	"Call this tool directly for catalog maintenance without build or verification workflows.",
 	"context returns the prior index commit, changed files (with working-tree changes), and current index. apply adds, updates, or removes explicit issues and refreshes the analysis timestamp. Omitted issues and fields remain unchanged.",
 ];
 
@@ -138,6 +139,11 @@ export default function (pi: ExtensionAPI) {
 		name: "issues",
 		label: "Issues",
 		description: DESCRIPTION.join(" "),
+		promptGuidelines: [
+			"Use issues directly to record, update, or remove established findings. Curator delegation is optional and serves repository analysis.",
+			"Catalog maintenance is administrative state, like todo updates, not source implementation. It requires no implementation authorization, baseline checks, builds, formatters, or post-change verification.",
+			"If an issues operation fails validation, correct the request and retry. Do not edit catalog files manually.",
+		],
 		parameters,
 		// Each delta depends on the catalog state from the previous call.
 		executionMode: "sequential",

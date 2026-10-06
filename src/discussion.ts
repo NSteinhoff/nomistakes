@@ -1,7 +1,7 @@
 /**
  * Discussion mode extension.
  *
- * Runtime authorization keeps tools and system guidance constant across modes.
+ * Runtime authorization keeps tools and system guidance constant across authorization state.
  */
 
 import type {
@@ -12,20 +12,18 @@ import { Key } from "@earendil-works/pi-tui";
 import { extractMessageText } from "./utils/message-text";
 
 const STATUS_ID = "discussion";
-const BLOCKED_TOOLS = new Set<string>([
-	"edit",
-	"write",
-	"move_file",
-	"delete_file",
-	"bash",
-]);
 const IMPLEMENTATION_TURN_PREFIXES = ["Implement", "Fix"];
 const IMPLEMENTATION_TURN_SUFFIXES = ["Go!", "Do it!", "Make it so!"];
+const SYSTEM_PROMPT_SECTION = "discussion-mode";
+
+const BLOCKED_TOOLS = ["edit", "write", "move_file", "delete_file", "bash"];
+
 const DISCUSSION_GUIDANCE = [
-	"Discussion mode defaults to enabled. The user can toggle it with /discussion.",
-	"While enabled, propose changes in prose. Do not implement changes or invoke",
-	"mutating tools unless the current user message carries an authorization",
-	"prefix or suffix. Subagent delegation is allowed.",
+	"Discussion mode is enabled. The user can toggle it with /discussion.",
+	"While enabled, the following tools are blocked:",
+	...BLOCKED_TOOLS.map((toolName) => `- ${toolName}`),
+	"Do not call these tools unless the current user message carries an authorization. Propose changes in prose and sample (pseudo) code instead.",
+	"All other available tools, even mutating tools, are authorized. This mode is not a general read-only intent.",
 	"",
 	"Prefixes:",
 	...IMPLEMENTATION_TURN_PREFIXES.map((prefix) => `- ${prefix}`),
@@ -33,13 +31,7 @@ const DISCUSSION_GUIDANCE = [
 	"Suffixes:",
 	...IMPLEMENTATION_TURN_SUFFIXES.map((suffix) => `- ${suffix}`),
 	"",
-	"Each user message sets authorization from its own token at delivery.",
-	"This also applies to steering and follow-up messages. A message without",
-	"a token revokes authorization from the previous message.",
-	"",
-	"Restricted tool calls return a refusal message while discussion mode is",
-	"enabled and the current turn lacks authorization. When the user disables",
-	"discussion mode, this restriction does not apply.",
+	"Each user message sets authorization from its own token at delivery. This also applies to steering and follow-up messages. A message without a token revokes authorization from the previous message.",
 ].join("\n");
 
 function isImplementationTurn(text: string): boolean {
@@ -91,7 +83,11 @@ export default function discussionMode(pi: ExtensionAPI): void {
 	});
 
 	pi.on("tool_call", async (event) => {
-		if (!enabled || implementationTurn || !BLOCKED_TOOLS.has(event.toolName)) {
+		if (
+			!enabled ||
+			implementationTurn ||
+			!BLOCKED_TOOLS.includes(event.toolName)
+		) {
 			return;
 		}
 
@@ -102,7 +98,12 @@ export default function discussionMode(pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_agent_start", async (event) => {
-		event.systemPromptOptions.sections["discussion-mode"] = DISCUSSION_GUIDANCE;
+		if (enabled) {
+			event.systemPromptOptions.sections[SYSTEM_PROMPT_SECTION] =
+				DISCUSSION_GUIDANCE;
+		} else {
+			delete event.systemPromptOptions.sections[SYSTEM_PROMPT_SECTION];
+		}
 	});
 
 	pi.on("message_start", async (event, ctx) => {

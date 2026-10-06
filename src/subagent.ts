@@ -1280,6 +1280,7 @@ export default function (pi: ExtensionAPI) {
 	registerDelegateCommands(pi, discoveredAgents);
 	pi.registerTool<typeof SubagentParams, SubagentToolDetails>({
 		name: "delegate",
+		exposure: "model-only",
 		label: "Subagent",
 		description: [
 			"Delegate a focused task to a specialized subagent with isolated conversation context and resolved tools.",
