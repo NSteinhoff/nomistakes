@@ -11,6 +11,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { lstatOrNull } from "./utils/fs";
 import { formatGitFailure, runGit } from "./utils/git";
+import { deriveSessionName, openChildSession } from "./utils/session";
 import {
 	type ExpandableOutputDetails,
 	renderExpandableToolResult,
@@ -135,6 +136,123 @@ const parameters = Type.Object(
 );
 
 export default function (pi: ExtensionAPI) {
+	let cwd: string | null = null;
+	pi.on("session_start", (_event, ctx) => {
+		cwd = ctx.cwd;
+	});
+
+	pi.registerCommand("issue", {
+		description:
+			"Select a catalog issue, optionally by kind, and open a child session",
+		getArgumentCompletions: async (prefix) => {
+			if (cwd === null) return null;
+			let catalog: Catalog | string;
+			try {
+				catalog = await loadCatalog(cwd);
+			} catch {
+				return null;
+			}
+			if (typeof catalog === "string") return null;
+
+			const availableKinds = new Set(
+				[...catalog.entries.values()].map(({ kind }) => kind),
+			);
+			const query = prefix.trimStart().toLowerCase();
+			const items = SECTION_KINDS.filter(
+				({ kind }) => availableKinds.has(kind) && kind.startsWith(query),
+			).map(({ kind }) => ({ value: kind, label: kind }));
+			return items.length > 0 ? items : null;
+		},
+		handler: async (args, ctx) => {
+			if (ctx.mode !== "tui") {
+				ctx.ui.notify("issue requires interactive mode", "error");
+				return;
+			}
+
+			const kind = args.trim();
+			const kindOrder = SECTION_KINDS.map(({ kind }) => kind);
+			if (kind && !kindOrder.includes(kind)) {
+				ctx.ui.notify(
+					`Unknown issue kind '${kind}'. Accepted kinds: ${kindOrder.join(", ")}.`,
+					"error",
+				);
+				return;
+			}
+
+			const catalog = await loadCatalog(ctx.cwd);
+			if (typeof catalog === "string") {
+				ctx.ui.notify(catalog, "error");
+				return;
+			}
+			const entries = [...catalog.entries.values()]
+				.filter((entry) => !kind || entry.kind === kind)
+				.sort(
+					(a, b) =>
+						kindOrder.indexOf(a.kind) - kindOrder.indexOf(b.kind) ||
+						compareEntries(a, b),
+				);
+			if (entries.length === 0) {
+				ctx.ui.notify(
+					kind
+						? `No open issues for kind '${kind}'`
+						: "No open issues in the catalog",
+					"info",
+				);
+				return;
+			}
+			const choices = new Map<string, IssueEntry>();
+			for (const entry of entries) {
+				choices.set(
+					`[${entry.kind}] ${entry.headline} — ${entry.path}:${entry.line} (${entry.id})`,
+					entry,
+				);
+			}
+			const selected = await ctx.ui.select("Select an issue", [
+				...choices.keys(),
+			]);
+			if (selected === undefined) return;
+			const entry = choices.get(selected);
+			if (entry === undefined) return;
+
+			const result = await openChildSession(ctx, {
+				name: deriveSessionName(entry.headline),
+				contextEntry: {
+					customType: "issue-context",
+					content: buildDetail(entry),
+				},
+				readyNotice: `Issue ${entry.id} loaded. Submit a message to start.`,
+			});
+			if (result.cancelled) {
+				ctx.ui.notify("New session cancelled", "info");
+			}
+		},
+	});
+
+	pi.registerCommand("issues", {
+		description: "List open catalog issues",
+		handler: async (_args, ctx) => {
+			const catalog = await loadCatalog(ctx.cwd);
+			if (typeof catalog === "string") {
+				ctx.ui.notify(catalog, "error");
+				return;
+			}
+			const entries = [...catalog.entries.values()];
+			const lines = SECTION_KINDS.flatMap(({ kind }) =>
+				entries
+					.filter((entry) => entry.kind === kind)
+					.sort(compareEntries)
+					.map(
+						(entry) =>
+							`[${entry.kind}] ${entry.headline} — ${entry.path}:${entry.line} (${entry.id})`,
+					),
+			);
+			ctx.ui.notify(
+				lines.length > 0 ? lines.join("\n") : "No open issues in the catalog",
+				"info",
+			);
+		},
+	});
+
 	pi.registerTool<typeof parameters, ToolDetails>({
 		name: "issues",
 		label: "Issues",

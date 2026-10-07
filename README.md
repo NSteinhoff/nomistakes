@@ -38,6 +38,16 @@ checks apply below the session's working directory, so hidden ancestors do not
 require approval for ordinary files. Hidden paths inside the checkout still
 require approval unless an explicit exception permits access.
 
+## Issue sessions
+
+Use `/issues` to display a compact list of open issues in catalog order without
+an agent turn or a session change.
+
+Use `/issue [kind]` to select an open catalog issue and create a child session
+with its complete details. If a kind is supplied, the selector lists only that
+kind. The child copies no conversation history and stays idle until a user
+message arrives. The command leaves the catalog unchanged.
+
 ## Worktree sessions
 
 Use `/worktree <goal>` to transfer context into a separate checkout in the same
