@@ -47,8 +47,8 @@ Do not remove TODO/FIXME/HACK/XXX comments. Flag them instead. In particular, fl
 - resolves the underlying issue, leaving the comment stale.
 
 ## 5. Check issues
-Check the issue catalogue and flag when an issue was resolved by this change
-set.
+Check the issue catalogue using the `issues` tool and flag when an issue was
+resolved by this change set.
 
 ## 6. Commit message
 Produce:

@@ -4,7 +4,7 @@ import {
 	convertToLlm,
 	serializeConversation,
 } from "@earendil-works/pi-coding-agent";
-import { generateWithLoader } from "./session";
+import { deriveSessionName, generateWithLoader } from "./session";
 
 const HANDOFF_MODEL_ID = "fast";
 
@@ -14,10 +14,11 @@ const SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversatio
 2. Lists any relevant files that were discussed or modified
 3. Clearly states the next task based on the user's goal
 4. Is self-contained - the new thread should be able to proceed without the old conversation
+5. Excludes prior workflow requests unless the new goal explicitly includes them
 
-Format your response as a prompt the user can send to start the new thread. Be concise but include all necessary context. Do not include any preamble like "Here's the prompt" - just output the prompt itself.
+Return only a JSON object with two string fields: "title" and "prompt". Use a short, descriptive title for the task. Make the prompt self-contained and concise. Do not include a preamble or Markdown fences around the JSON.
 
-Example output format:
+Example format for the prompt field:
 ## Context
 We've been working on X. Key decisions:
 - Decision 1
@@ -30,10 +31,15 @@ Files involved:
 ## Task
 [Clear description of what to do next based on the user's goal]`;
 
-export async function generateHandoffPrompt(
+export type Handoff = {
+	readonly title: string;
+	readonly prompt: string;
+};
+
+export async function generateHandoff(
 	ctx: ExtensionContext,
 	goal: string,
-): Promise<string | null> {
+): Promise<Handoff | null> {
 	const messages = buildSessionContext(ctx.sessionManager.getBranch()).messages;
 	if (messages.length === 0) {
 		ctx.ui.notify("No conversation to hand off", "error");
@@ -53,10 +59,39 @@ export async function generateHandoffPrompt(
 		return null;
 	}
 	const conversationText = serializeConversation(convertToLlm(messages));
-	return generateWithLoader(ctx, {
+	const generated = await generateWithLoader(ctx, {
 		model,
 		loaderMessage: "Generating handoff prompt...",
 		systemPrompt: SYSTEM_PROMPT,
 		userText: `## Conversation History\n\n${conversationText}\n\n## User's Goal for New Thread\n\n${goal}`,
 	});
+	if (generated === null) {
+		return null;
+	}
+
+	let value: unknown;
+	try {
+		value = JSON.parse(generated);
+	} catch {
+		ctx.ui.notify("Invalid handoff response. Expected JSON.", "error");
+		return null;
+	}
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		!("prompt" in value) ||
+		typeof value.prompt !== "string" ||
+		!value.prompt.trim()
+	) {
+		ctx.ui.notify("Invalid handoff response. No prompt supplied.", "error");
+		return null;
+	}
+	const title =
+		"title" in value && typeof value.title === "string"
+			? value.title.trim()
+			: "";
+	return {
+		title: deriveSessionName(title || goal),
+		prompt: value.prompt.trim(),
+	};
 }

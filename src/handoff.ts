@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { generateHandoffPrompt } from "./utils/handoff";
-import { deriveSessionName, editAndSeedChildSession } from "./utils/session";
+import { generateHandoff } from "./utils/handoff";
+import { editAndSeedChildSession } from "./utils/session";
 
 const HANDOFF_CUSTOM_TYPE = "handoff-prompt";
 
@@ -21,15 +21,15 @@ export default function (pi: ExtensionAPI): void {
 				ctx.ui.notify("Usage: /handoff <goal for new thread>", "error");
 				return;
 			}
-			const result = await generateHandoffPrompt(ctx, goal);
+			const result = await generateHandoff(ctx, goal);
 			if (result === null) {
 				ctx.ui.notify("Cancelled", "info");
 				return;
 			}
 			const newSessionResult = await editAndSeedChildSession(ctx, {
 				editorTitle: "Edit handoff prompt",
-				generated: result,
-				name: deriveSessionName(goal),
+				generated: result.prompt,
+				name: result.title,
 				customType: HANDOFF_CUSTOM_TYPE,
 				readyNotice: "Handoff seeded. Send a message to continue.",
 			});

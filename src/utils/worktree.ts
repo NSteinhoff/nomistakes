@@ -27,6 +27,8 @@ export const WORKTREE_METADATA_TYPE = "worktree-session";
 const WORKTREE_DIRECTORY = path.resolve(getAgentDir(), "worktrees");
 const INCLUDE_FILE = ".worktreeinclude";
 const PATCH_DIRECTORY = ".patches";
+const MAX_WORKTREE_SLUG_LENGTH = 60;
+const PATCH_BASENAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*\.patch$/;
 
 export type WorktreeMetadata = {
 	readonly worktreeRoot: string;
@@ -150,7 +152,19 @@ async function readIncludes(root: string): Promise<string[]> {
 	return entries;
 }
 
-async function prepareDirectory(root: string): Promise<string> {
+function worktreeSlug(title: string): string {
+	return (
+		title
+			.normalize("NFKD")
+			.replace(/\p{M}/gu, "")
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.slice(0, MAX_WORKTREE_SLUG_LENGTH)
+			.replace(/^-+|-+$/g, "") || "worktree"
+	);
+}
+
+async function prepareDirectory(root: string, title: string): Promise<string> {
 	await mkdir(WORKTREE_DIRECTORY, { recursive: true });
 	const directory = await realpath(WORKTREE_DIRECTORY);
 
@@ -160,7 +174,7 @@ async function prepareDirectory(root: string): Promise<string> {
 		);
 	}
 
-	const target = await mkdtemp(`${directory}${path.sep}`);
+	const target = await mkdtemp(path.join(directory, `${worktreeSlug(title)}-`));
 
 	return target;
 }
@@ -212,7 +226,10 @@ async function copyIncludes(
 }
 
 /** Retain a worktree after failure so the user can inspect or remove it. */
-export async function createWorktree(cwd: string): Promise<WorktreeResult> {
+export async function createWorktree(
+	cwd: string,
+	title: string,
+): Promise<WorktreeResult> {
 	let target: string | null = null;
 	try {
 		const sourceRoot = await realpath(
@@ -230,7 +247,7 @@ export async function createWorktree(cwd: string): Promise<WorktreeResult> {
 			return snapshot;
 		}
 
-		target = await prepareDirectory(sourceRoot);
+		target = await prepareDirectory(sourceRoot, title);
 
 		await gitOutput({
 			args: ["worktree", "add", "--detach", target, snapshot.snapshot.commit],
@@ -258,18 +275,20 @@ export function createWorktreeMetadata({
 	worktreeRoot,
 	parentRoot,
 	baseCommit,
-	sessionId,
 }: {
 	readonly worktreeRoot: string;
 	readonly parentRoot: string;
 	readonly baseCommit: string;
-	readonly sessionId: string;
 }): WorktreeMetadata {
 	return {
 		worktreeRoot: worktreeRoot,
 		parentRoot: parentRoot,
 		baseCommit: baseCommit,
-		patchPath: path.join(parentRoot, PATCH_DIRECTORY, `${sessionId}.patch`),
+		patchPath: path.join(
+			parentRoot,
+			PATCH_DIRECTORY,
+			`${path.basename(worktreeRoot)}.patch`,
+		),
 	};
 }
 
@@ -322,7 +341,9 @@ export function getWorktreeState(
 		metadata.worktreeRoot === metadata.parentRoot ||
 		!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(metadata.baseCommit) ||
 		metadata.patchPath !== expectedPath ||
-		!/^[a-f0-9-]+\.patch$/.test(path.basename(metadata.patchPath))
+		!PATCH_BASENAME_PATTERN.test(
+			path.basename(metadata.patchPath).toLowerCase(),
+		)
 	) {
 		return { kind: "invalid", error: "Invalid worktree session metadata." };
 	}

@@ -4,8 +4,8 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "./utils/error-message";
-import { generateHandoffPrompt } from "./utils/handoff";
-import { deriveSessionName, flushSessionFile } from "./utils/session";
+import { generateHandoff } from "./utils/handoff";
+import { flushSessionFile } from "./utils/session";
 import {
 	createWorktree,
 	createWorktreeMetadata,
@@ -24,7 +24,7 @@ async function openWorktreeSession(
 		readonly root: string;
 		readonly parentRoot: string;
 		readonly baseCommit: string;
-		readonly goal: string;
+		readonly title: string;
 		readonly prompt: string;
 	},
 ): Promise<void> {
@@ -32,7 +32,7 @@ async function openWorktreeSession(
 		parentSession: ctx.sessionManager.getSessionFile(),
 	});
 
-	session.appendSessionInfo(deriveSessionName(options.goal));
+	session.appendSessionInfo(options.title);
 	if (ctx.model) session.appendModelChange(ctx.model.provider, ctx.model.id);
 	session.appendThinkingLevelChange(pi.getThinkingLevel());
 
@@ -40,7 +40,6 @@ async function openWorktreeSession(
 		worktreeRoot: options.root,
 		parentRoot: options.parentRoot,
 		baseCommit: options.baseCommit,
-		sessionId: session.getSessionId(),
 	});
 	session.appendCustomEntry(WORKTREE_METADATA_TYPE, metadata);
 	session.appendCustomMessageEntry(CONTEXT_TYPE, options.prompt, true);
@@ -132,18 +131,21 @@ export default function worktree(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const generated = await generateHandoffPrompt(ctx, goal);
+			const generated = await generateHandoff(ctx, goal);
 			if (generated === null) {
 				return;
 			}
 
-			const prompt = await ctx.ui.editor("Edit worktree prompt", generated);
+			const prompt = await ctx.ui.editor(
+				"Edit worktree prompt",
+				generated.prompt,
+			);
 			if (prompt === undefined) {
 				ctx.ui.notify("Cancelled", "info");
 				return;
 			}
 
-			const result = await createWorktree(ctx.cwd);
+			const result = await createWorktree(ctx.cwd, generated.title);
 			if (!result.ok) {
 				ctx.ui.notify(result.error, "error");
 				return;
@@ -152,7 +154,7 @@ export default function worktree(pi: ExtensionAPI): void {
 			try {
 				await openWorktreeSession(pi, ctx, {
 					...result,
-					goal,
+					title: generated.title,
 					prompt: prompt.trim(),
 				});
 			} catch (error) {
