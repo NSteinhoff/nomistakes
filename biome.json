@@ -1,6 +1,7 @@
 {
 	"formatter": {
 		"enabled": true,
-		"useEditorconfig": true
+		"useEditorconfig": true,
+		"includes": ["**", "!stow/pi/.pi/agent/settings.json"]
 	}
 }

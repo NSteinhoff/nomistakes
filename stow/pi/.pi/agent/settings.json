@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.0.4",
+  "lastChangelogVersion": "1.1.0",
   "defaultProvider": "openai-codex",
   "defaultModel": "smart",
   "defaultThinkingLevel": "medium",
@@ -23,5 +23,10 @@
   "terminal": {
     "showTerminalProgress": true
   },
-  "defaultTools": ["+find", "+ls", "+grep", "-codemode"]
+  "defaultTools": [
+    "+find",
+    "+ls",
+    "+grep",
+    "-codemode"
+  ]
 }
