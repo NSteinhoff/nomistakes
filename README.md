@@ -43,10 +43,11 @@ require approval unless an explicit exception permits access.
 Use `/issues` to display a compact list of open issues in catalog order without
 an agent turn or a session change.
 
-Use `/issue [kind]` to select an open catalog issue and create a child session
-with its complete details. If a kind is supplied, the selector lists only that
-kind. The child copies no conversation history and stays idle until a user
-message arrives. The command leaves the catalog unchanged.
+Use `/issue [kind]` to select an open catalog issue. Press Enter to load its
+details into the current session. Press Shift+Enter to create an isolated child
+session with its details. If a kind is supplied, the selector lists only that
+kind. The child copies no conversation history. Neither action starts an agent
+turn or changes the catalog.
 
 ## Worktree sessions
 

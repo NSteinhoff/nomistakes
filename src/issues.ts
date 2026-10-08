@@ -7,7 +7,14 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { DynamicBorder } from "@earendil-works/pi-coding-agent";
+import {
+	Container,
+	Key,
+	matchesKey,
+	SelectList,
+	Text,
+} from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { lstatOrNull } from "./utils/fs";
 import { formatGitFailure, runGit } from "./utils/git";
@@ -135,6 +142,65 @@ const parameters = Type.Object(
 	{ additionalProperties: false },
 );
 
+type IssueSelection = {
+	readonly choice: string;
+	readonly newSession: boolean;
+};
+
+const ISSUE_SELECTOR_ROWS = 10;
+
+async function selectIssue(
+	ctx: ExtensionContext,
+	choices: readonly string[],
+): Promise<IssueSelection | null> {
+	return ctx.ui.custom<IssueSelection | null>((tui, theme, _kb, done) => {
+		const container = new Container();
+		container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+		container.addChild(new Text(theme.fg("accent", "Select an issue")));
+		const list = new SelectList(
+			choices.map((choice) => ({ value: choice, label: choice })),
+			Math.min(choices.length, ISSUE_SELECTOR_ROWS),
+			{
+				selectedPrefix: (text) => theme.fg("accent", text),
+				selectedText: (text) => theme.fg("accent", text),
+				description: (text) => theme.fg("muted", text),
+				scrollInfo: (text) => theme.fg("dim", text),
+				noMatch: (text) => theme.fg("warning", text),
+			},
+		);
+		list.onSelect = (item) => done({ choice: item.value, newSession: false });
+		list.onCancel = () => done(null);
+		container.addChild(list);
+		container.addChild(
+			new Text(
+				theme.fg(
+					"dim",
+					"↑↓ navigate • enter load • shift+enter new session • esc cancel",
+				),
+			),
+		);
+		container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+		return {
+			render: (width) => container.render(width),
+			invalidate: () => container.invalidate(),
+			handleInput: (data) => {
+				if (matchesKey(data, Key.shift("enter"))) {
+					const item = list.getSelectedItem();
+					if (item !== null) done({ choice: item.value, newSession: true });
+					return;
+				}
+				if (matchesKey(data, Key.enter)) {
+					const item = list.getSelectedItem();
+					if (item !== null) done({ choice: item.value, newSession: false });
+					return;
+				}
+				list.handleInput(data);
+				tui.requestRender();
+			},
+		};
+	});
+}
+
 export default function (pi: ExtensionAPI) {
 	let cwd: string | null = null;
 	pi.on("session_start", (_event, ctx) => {
@@ -143,7 +209,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("issue", {
 		description:
-			"Select a catalog issue, optionally by kind, and open a child session",
+			"Select a catalog issue, optionally by kind, for the current or a child session",
 		getArgumentCompletions: async (prefix) => {
 			if (cwd === null) return null;
 			let catalog: Catalog | string;
@@ -207,19 +273,30 @@ export default function (pi: ExtensionAPI) {
 					entry,
 				);
 			}
-			const selected = await ctx.ui.select("Select an issue", [
-				...choices.keys(),
-			]);
-			if (selected === undefined) return;
-			const entry = choices.get(selected);
+			const selected = await selectIssue(ctx, [...choices.keys()]);
+			if (selected === null) return;
+			const entry = choices.get(selected.choice);
 			if (entry === undefined) return;
+
+			const contextEntry = {
+				customType: "issue-context",
+				content: buildDetail(entry),
+			};
+			if (!selected.newSession) {
+				pi.sendMessage(
+					{ ...contextEntry, display: true, details: undefined },
+					{ triggerTurn: false },
+				);
+				ctx.ui.notify(
+					`Issue ${entry.id} loaded. Submit a message to start.`,
+					"info",
+				);
+				return;
+			}
 
 			const result = await openChildSession(ctx, {
 				name: deriveSessionName(entry.headline),
-				contextEntry: {
-					customType: "issue-context",
-					content: buildDetail(entry),
-				},
+				contextEntry,
 				readyNotice: `Issue ${entry.id} loaded. Submit a message to start.`,
 			});
 			if (result.cancelled) {
