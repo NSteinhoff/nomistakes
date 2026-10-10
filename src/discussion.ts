@@ -31,7 +31,7 @@ const DISCUSSION_GUIDANCE = [
 	"Suffixes:",
 	...IMPLEMENTATION_TURN_SUFFIXES.map((suffix) => `- ${suffix}`),
 	"",
-	"Each user message sets authorization from its own token at delivery. This also applies to steering and follow-up messages. A message without a token revokes authorization from the previous message.",
+	"Each user message sets authorization for that turn from its own token at delivery. This also applies to steering and follow-up messages. A message without a token revokes authorization from the previous message.",
 ].join("\n");
 
 function isImplementationTurn(text: string): boolean {
