@@ -6,11 +6,13 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "./utils/error-message";
 import { generateHandoff } from "./utils/handoff";
 import { flushSessionFile } from "./utils/session";
+import { createSnapshot, SNAPSHOT_RESET_EVENT } from "./utils/snapshot";
 import {
 	createWorktree,
 	createWorktreeMetadata,
 	exportWorktreePatch,
 	getWorktreeState,
+	updateWorktree,
 	WORKTREE_METADATA_TYPE,
 } from "./utils/worktree";
 
@@ -67,6 +69,34 @@ async function openWorktreeSession(
 	}
 }
 
+async function announceWorktreeUpdate(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	root: string,
+): Promise<void> {
+	const checkpoint = await createSnapshot({
+		cwd: root,
+		description: "worktree update checkpoint",
+	});
+	if (checkpoint.ok) {
+		pi.events.emit(SNAPSHOT_RESET_EVENT, checkpoint.snapshot);
+	} else {
+		ctx.ui.notify(
+			`Worktree updated, but snapshot reset failed: ${checkpoint.error}`,
+			"warning",
+		);
+	}
+	pi.sendMessage(
+		{
+			customType: "worktree-update",
+			content:
+				"The worktree now matches the parent checkout. All previous local worktree changes were discarded. Re-read relevant files before further edits. Subsequent patches use the new base.",
+			display: true,
+		},
+		{ deliverAs: "nextTurn" },
+	);
+}
+
 export default function worktree(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => {
 		const state = getWorktreeState(ctx.cwd, ctx.sessionManager.getEntries());
@@ -105,6 +135,64 @@ export default function worktree(pi: ExtensionAPI): void {
 				"error",
 			);
 		}
+	});
+
+	pi.registerCommand("worktree-update", {
+		description: "Replace this worktree with the current parent checkout",
+		handler: async (args, ctx) => {
+			if (ctx.mode !== "tui") {
+				ctx.ui.notify("worktree-update requires interactive mode", "error");
+				return;
+			}
+			if (!ctx.isIdle()) {
+				ctx.ui.notify("Wait for the current turn to finish.", "error");
+				return;
+			}
+			if (args.trim()) {
+				ctx.ui.notify("Usage: /worktree-update", "error");
+				return;
+			}
+			const state = getWorktreeState(ctx.cwd, ctx.sessionManager.getEntries());
+			if (state.kind !== "worktree") {
+				ctx.ui.notify(
+					state.kind === "invalid" ? state.error : "Not a worktree session.",
+					"error",
+				);
+				return;
+			}
+			const sessionManager = ctx.sessionManager;
+			if (!(sessionManager instanceof SessionManager)) {
+				ctx.ui.notify(
+					"The session cannot persist a new worktree base.",
+					"error",
+				);
+				return;
+			}
+			const confirmed = await ctx.ui.confirm(
+				"Replace worktree?",
+				`Discard all local changes and extra files, including ignored files, in ${state.metadata.worktreeRoot}. Replace them with the current checkout at ${state.metadata.parentRoot}. Session history remains unchanged.`,
+			);
+			if (!confirmed) return;
+			if (!ctx.isIdle()) {
+				ctx.ui.notify("Wait for the current turn to finish.", "error");
+				return;
+			}
+			try {
+				await updateWorktree(state.metadata, (metadata) => {
+					sessionManager.appendCustomEntry(WORKTREE_METADATA_TYPE, metadata);
+				});
+				await announceWorktreeUpdate(pi, ctx, state.metadata.worktreeRoot);
+				ctx.ui.notify(
+					`Worktree updated. Patch: ${state.metadata.patchPath}`,
+					"info",
+				);
+			} catch (error) {
+				ctx.ui.notify(
+					`Worktree update failed: ${errorMessage(error)}\nThe worktree can be incomplete. The patch is stale or absent: ${state.metadata.patchPath}`,
+					"error",
+				);
+			}
+		},
 	});
 
 	pi.registerCommand("worktree", {

@@ -23,7 +23,12 @@ import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { formatGitFailure, runGit, runGitBytes } from "./utils/git";
 import { extractMessageText } from "./utils/message-text";
-import { createSnapshot, type Snapshot } from "./utils/snapshot";
+import {
+	createSnapshot,
+	isSnapshot,
+	SNAPSHOT_RESET_EVENT,
+	type Snapshot,
+} from "./utils/snapshot";
 import {
 	buildExpandableOutput,
 	buildExpandableToolResult,
@@ -101,6 +106,15 @@ const toolParameters = Type.Object({
 
 export default function turnSnapshot(pi: ExtensionAPI): void {
 	const state: State = {};
+
+	pi.events.on(SNAPSHOT_RESET_EVENT, (snapshot) => {
+		if (!isSnapshot(snapshot)) return;
+		state.turnStartSnapshot = snapshot;
+		state.lastTurnEndSnapshot = snapshot;
+		state.reviewBaseline = snapshot;
+		state.reviewInProgress = undefined;
+		state.lastError = undefined;
+	});
 
 	// Seed a checkpoint when a session starts, loads, or reloads so /review and
 	// the inter-turn awareness notice work before the first agent turn: without

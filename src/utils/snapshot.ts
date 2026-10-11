@@ -14,6 +14,8 @@ const SNAPSHOT_IDENTITY: Readonly<Record<string, string>> = {
 	GIT_COMMITTER_EMAIL: "pi-snapshot@localhost",
 };
 
+export const SNAPSHOT_RESET_EVENT = "snapshot:reset";
+
 export type Snapshot = {
 	readonly id: string;
 	readonly commit: string;
@@ -22,6 +24,25 @@ export type Snapshot = {
 	readonly createdAt: number;
 	readonly description: string;
 };
+
+export function isSnapshot(value: unknown): value is Snapshot {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"id" in value &&
+		typeof value.id === "string" &&
+		"commit" in value &&
+		typeof value.commit === "string" &&
+		"tree" in value &&
+		typeof value.tree === "string" &&
+		"repoRoot" in value &&
+		typeof value.repoRoot === "string" &&
+		"createdAt" in value &&
+		typeof value.createdAt === "number" &&
+		"description" in value &&
+		typeof value.description === "string"
+	);
+}
 
 export type SnapshotResult =
 	| { readonly ok: true; readonly snapshot: Snapshot }

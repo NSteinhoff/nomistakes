@@ -3,12 +3,14 @@ import {
 	cp,
 	mkdir,
 	mkdtemp,
+	readdir,
 	readFile,
 	realpath,
 	rename,
 	rm,
 	writeFile,
 } from "node:fs/promises";
+import { devNull } from "node:os";
 import path from "node:path";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -18,6 +20,7 @@ import {
 	formatGitFailure,
 	gitAddExcludeRule,
 	gitOutput,
+	runGit,
 	runGitBytes,
 } from "./git";
 import { createSnapshot } from "./snapshot";
@@ -311,17 +314,13 @@ export function getWorktreeState(
 	cwd: string,
 	sessionEntries: readonly SessionEntry[],
 ): WorktreeState {
-	const [entry, ...more] = sessionEntries.filter(
+	const entry = sessionEntries.findLast(
 		(entry) =>
 			entry.type === "custom" && entry.customType === WORKTREE_METADATA_TYPE,
 	);
 
 	if (!entry) {
 		return { kind: "none" };
-	}
-
-	if (more.length > 0) {
-		return { kind: "invalid", error: "Duplicate worktree session metadata." };
 	}
 
 	if (entry.type !== "custom" || !isMetadata(entry.data)) {
@@ -410,10 +409,7 @@ async function resolveGitCommonDirectory(cwd: string): Promise<string> {
 	);
 }
 
-/** Preserve the previous patch if capture or export fails. */
-export async function exportWorktreePatch(
-	metadata: WorktreeMetadata,
-): Promise<void> {
+async function validateWorktree(metadata: WorktreeMetadata): Promise<void> {
 	const parentCommon = await resolveGitCommonDirectory(metadata.parentRoot);
 	const worktreeCommon = await resolveGitCommonDirectory(metadata.worktreeRoot);
 
@@ -427,6 +423,89 @@ export async function exportWorktreePatch(
 		throw new Error("The worktree path differs from its canonical path.");
 	}
 
+	if (
+		(await gitOutput({
+			args: ["rev-parse", "--show-toplevel"],
+			cwd: metadata.worktreeRoot,
+		})) !== metadata.worktreeRoot ||
+		!(await lstatOrNull(path.join(metadata.worktreeRoot, ".git")))?.isFile() ||
+		isWithin(metadata.worktreeRoot, metadata.parentRoot) ||
+		isWithin(metadata.parentRoot, metadata.worktreeRoot)
+	) {
+		throw new Error("The worktree must be a separate linked checkout.");
+	}
+	const privateDirectory = await realpath(
+		await gitOutput({
+			args: ["rev-parse", "--absolute-git-dir"],
+			cwd: metadata.worktreeRoot,
+		}),
+	);
+	if (
+		path.dirname(privateDirectory) !== path.join(worktreeCommon, "worktrees") ||
+		(await readFile(path.join(privateDirectory, "gitdir"), "utf8")).trim() !==
+			path.join(metadata.worktreeRoot, ".git")
+	) {
+		throw new Error("The worktree lacks a matching private Git directory.");
+	}
+}
+
+/** Persist the new base through onReplaced before include copies or patch export can fail. */
+export async function updateWorktree(
+	metadata: WorktreeMetadata,
+	onReplaced: (metadata: WorktreeMetadata) => void,
+): Promise<void> {
+	await validateWorktree(metadata);
+	const sparse = await runGit({
+		args: ["config", "--bool", "--get", "core.sparseCheckout"],
+		cwd: metadata.worktreeRoot,
+	});
+	if (sparse.exitCode !== 0 && sparse.exitCode !== 1) {
+		throw new Error(formatGitFailure("config core.sparseCheckout", sparse));
+	}
+	if (sparse.stdout.trim() === "true") {
+		throw new Error("Disable sparse checkout before worktree replacement.");
+	}
+	await preparePatchDirectory(metadata.parentRoot, true);
+	const entries = await readIncludes(metadata.parentRoot);
+	const snapshot = await createSnapshot({
+		cwd: metadata.parentRoot,
+		description: "worktree update",
+	});
+	if (!snapshot.ok) throw new Error(snapshot.error);
+	if (snapshot.snapshot.repoRoot !== metadata.parentRoot) {
+		throw new Error("The parent checkout path is not its repository root.");
+	}
+
+	// Remove ignored content and nested repositories without a path through symlinks.
+	for (const name of await readdir(metadata.worktreeRoot)) {
+		if (name === ".git") continue;
+		await rm(path.join(metadata.worktreeRoot, name), {
+			recursive: true,
+			force: true,
+		});
+	}
+	await gitOutput({
+		args: [
+			"-c",
+			`core.hooksPath=${devNull}`,
+			"checkout",
+			"--detach",
+			"--force",
+			snapshot.snapshot.commit,
+		],
+		cwd: metadata.worktreeRoot,
+	});
+	const updated = { ...metadata, baseCommit: snapshot.snapshot.commit };
+	onReplaced(updated);
+	await copyIncludes(metadata.parentRoot, metadata.worktreeRoot, entries);
+	await exportWorktreePatch(updated);
+}
+
+/** Preserve the previous patch if capture or export fails. */
+export async function exportWorktreePatch(
+	metadata: WorktreeMetadata,
+): Promise<void> {
+	await validateWorktree(metadata);
 	await preparePatchDirectory(metadata.parentRoot, true);
 
 	// An aborted turn still exports its partial edits, without its aborted signal.
