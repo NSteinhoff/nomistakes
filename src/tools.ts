@@ -68,6 +68,7 @@ const BUILTIN_PATH_TOOLS = new Set<CheckedToolName>([
 	"ls",
 ]);
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
+const SESSION_READ_BASES_ENTRY = "external-read-bases";
 
 const agentDir = path.resolve(getAgentDir());
 const CODEMODE_OUTPUT_DIR = resolveRealpath(tmpdir());
@@ -161,6 +162,7 @@ export default function (pi: ExtensionAPI) {
 			return undefined;
 		}
 
+		const externalReadPaths: string[] = [];
 		const canonicalCwd = resolveRealpath(ctx.cwd) ?? path.resolve(ctx.cwd);
 		for (const candidate of paths) {
 			let resolved: string;
@@ -176,6 +178,7 @@ export default function (pi: ExtensionAPI) {
 			const allowedExternalRead = isAllowedExternalReadPath(
 				event.toolName,
 				policyPath,
+				getSessionReadBases(ctx),
 			);
 			const allowedHiddenPath =
 				(allowedExternalRead &&
@@ -187,6 +190,7 @@ export default function (pi: ExtensionAPI) {
 				!READONLY_TOOLS.has(event.toolName) &&
 				(isProtectedPath(policyPath) || isProtectedPath(resolved));
 			const withinCwd = isWithinBase(canonicalCwd, policyPath);
+			if (!withinCwd) externalReadPaths.push(policyPath);
 			const hiddenPolicyPath = withinCwd
 				? path.relative(canonicalCwd, policyPath)
 				: policyPath;
@@ -245,7 +249,28 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
+		// Commands can revoke grants while a confirmation dialog awaits a response.
+		const sessionReadBases = getSessionReadBases(ctx);
+		for (const policyPath of externalReadPaths) {
+			if (!isAllowedExternalReadPath(toolName, policyPath, sessionReadBases)) {
+				return {
+					block: true,
+					reason: `External read permission no longer applies: ${policyPath}`,
+				};
+			}
+		}
 		return undefined;
+	});
+
+	pi.registerCommand("allow-read", {
+		description:
+			"Allow reads from an external directory for this session, or list grants",
+		handler: async (args, ctx) => allowSessionRead(pi, ctx, args),
+	});
+
+	pi.registerCommand("revoke-read", {
+		description: "Revoke a session read grant, or revoke all grants with --all",
+		handler: async (args, ctx) => revokeSessionRead(pi, ctx, args),
 	});
 
 	pi.registerCommand("tools", {
@@ -291,6 +316,134 @@ export default function (pi: ExtensionAPI) {
 	});
 }
 
+// Read the active branch so reloads and tree navigation preserve its permissions.
+function getSessionReadBases(ctx: ExtensionContext): readonly string[] {
+	const branch = ctx.sessionManager.getBranch();
+	for (let index = branch.length - 1; index >= 0; index--) {
+		const entry = branch[index];
+		if (
+			entry?.type !== "custom" ||
+			entry.customType !== SESSION_READ_BASES_ENTRY
+		) {
+			continue;
+		}
+		const data: unknown = entry.data;
+		if (!Array.isArray(data)) return [];
+		for (const base of data) {
+			if (typeof base !== "string" || !path.isAbsolute(base)) return [];
+		}
+		return data as string[];
+	}
+	return [];
+}
+
+function allowSessionRead(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	args: string,
+): void {
+	const directory = args.trim();
+	if (!directory) {
+		ctx.ui.notify(formatSessionReadBasesBlock(ctx), "info");
+		return;
+	}
+
+	// Pi defers transcript persistence until the first conversation message.
+	const hasConversation = ctx.sessionManager
+		.getEntries()
+		.some(
+			(entry) =>
+				entry.type === "message" &&
+				(entry.message.role === "user" || entry.message.role === "assistant"),
+		);
+	if (!hasConversation) {
+		ctx.ui.notify(
+			"Send a conversation message before /allow-read so the grant can persist.",
+			"warning",
+		);
+		return;
+	}
+
+	let base: string;
+	try {
+		base = realpathSync(resolveCheckedToolPath("ls", directory, ctx.cwd));
+		if (!statSync(base).isDirectory()) {
+			ctx.ui.notify(`Not a directory: ${directory}`, "warning");
+			return;
+		}
+	} catch (error) {
+		ctx.ui.notify(
+			`Invalid directory '${directory}': ${errorMessage(error)}`,
+			"warning",
+		);
+		return;
+	}
+
+	const bases = getSessionReadBases(ctx);
+	if (bases.includes(base)) {
+		ctx.ui.notify(`Session read grant already exists: ${base}`, "info");
+		return;
+	}
+	pi.appendEntry(SESSION_READ_BASES_ENTRY, [...bases, base]);
+	ctx.ui.notify(`Allowed session reads: ${base}`, "info");
+}
+
+function revokeSessionRead(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	args: string,
+): void {
+	const directory = args.trim();
+	if (!directory) {
+		ctx.ui.notify(
+			"Use /revoke-read <directory> or /revoke-read --all",
+			"warning",
+		);
+		return;
+	}
+
+	const bases = getSessionReadBases(ctx);
+	if (directory === "--all") {
+		pi.appendEntry(SESSION_READ_BASES_ENTRY, []);
+		ctx.ui.notify(`Revoked ${bases.length} session read grant(s).`, "info");
+		return;
+	}
+
+	let resolved: string;
+	try {
+		resolved = resolveCheckedToolPath("ls", directory, ctx.cwd);
+	} catch (error) {
+		ctx.ui.notify(
+			`Invalid path '${directory}': ${errorMessage(error)}`,
+			"warning",
+		);
+		return;
+	}
+	// A deleted directory must remain revocable by its stored canonical path.
+	const base = resolveRealpath(resolved) ?? resolved;
+	if (!bases.includes(base)) {
+		ctx.ui.notify(`No session read grant for: ${base}`, "warning");
+		return;
+	}
+	pi.appendEntry(
+		SESSION_READ_BASES_ENTRY,
+		bases.filter((candidate) => candidate !== base),
+	);
+	ctx.ui.notify(`Revoked session reads: ${base}`, "info");
+}
+
+function formatSessionReadBasesBlock(ctx: ExtensionContext): string {
+	const bases = [...getSessionReadBases(ctx)].sort((a, b) =>
+		a.localeCompare(b),
+	);
+	const lines = ["Session read grants:"];
+	for (const base of bases) {
+		lines.push(`- ${base}`);
+	}
+	if (bases.length === 0) lines.push("- none");
+	return lines.join("\n");
+}
+
 function inspectTool(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
@@ -324,6 +477,7 @@ function listTools(pi: ExtensionAPI, ctx: ExtensionContext) {
 	blocks.push(formatToolsBlock(pi));
 	blocks.push(formatApprovedHiddenPathsBlock());
 	blocks.push(formatExternalReadAllowlistBlock());
+	blocks.push(formatSessionReadBasesBlock(ctx));
 	blocks.push(formatHiddenPathAllowlistBlock());
 	blocks.push(formatProtectedFilesBlock());
 	ctx.ui.notify(blocks.join("\n\n"), "info");
@@ -446,6 +600,7 @@ function isWithinBase(baseDir: string, candidatePath: string): boolean {
 function isAllowedExternalReadPath(
 	toolName: string,
 	candidatePath: string,
+	sessionReadBases: readonly string[],
 ): boolean {
 	if (!READONLY_TOOLS.has(toolName)) return false;
 	if (
@@ -456,8 +611,10 @@ function isAllowedExternalReadPath(
 	) {
 		return true;
 	}
-	return EXTERNAL_READ_ALLOWLIST_BASES.some((base) =>
-		isWithinBase(base, candidatePath),
+	return (
+		EXTERNAL_READ_ALLOWLIST_BASES.some((base) =>
+			isWithinBase(base, candidatePath),
+		) || sessionReadBases.some((base) => isWithinBase(base, candidatePath))
 	);
 }
 
