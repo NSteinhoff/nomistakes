@@ -16,6 +16,8 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { DeleteFileToolInput, MoveFileToolInput } from "./file";
+import type { PatchFile } from "./utils/draft";
+import { PATCH_TOOL } from "./utils/draft";
 import { errorMessage } from "./utils/error-message";
 import { pruneSpillDir, SPILL_DIR } from "./utils/spill";
 
@@ -28,6 +30,7 @@ const CHECKED_TOOLS = [
 	"ls",
 	"move_file",
 	"delete_file",
+	PATCH_TOOL,
 ] as const;
 
 const ALLOWED_TOOLS = [
@@ -56,9 +59,10 @@ type CheckedToolInputs = {
 	find: FindToolInput;
 	move_file: MoveFileToolInput;
 	delete_file: DeleteFileToolInput;
+	create_patch: { readonly files: readonly PatchFile[] };
 };
 
-const READONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
+const READONLY_TOOLS = new Set(["read", "grep", "find", "ls", PATCH_TOOL]);
 const BUILTIN_PATH_TOOLS = new Set<CheckedToolName>([
 	"read",
 	"edit",
@@ -694,6 +698,11 @@ function getPathInputs(toolName: CheckedToolName, input: unknown): string[] {
 	const paths: string[] = [];
 
 	switch (toolName) {
+		case PATCH_TOOL: {
+			const toolInput = input as CheckedToolInputs[typeof toolName];
+			for (const file of toolInput.files) paths.push(safeString(file.path));
+			break;
+		}
 		case "grep":
 		case "ls":
 		case "find":

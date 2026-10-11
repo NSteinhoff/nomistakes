@@ -26,7 +26,7 @@ export const WORKTREE_METADATA_TYPE = "worktree-session";
 
 const WORKTREE_DIRECTORY = path.resolve(getAgentDir(), "worktrees");
 const INCLUDE_FILE = ".worktreeinclude";
-const PATCH_DIRECTORY = ".patches";
+export const PATCH_DIRECTORY = ".patches";
 const MAX_WORKTREE_SLUG_LENGTH = 60;
 const PATCH_BASENAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*\.patch$/;
 
@@ -236,7 +236,7 @@ export async function createWorktree(
 			await gitOutput({ args: ["rev-parse", "--show-toplevel"], cwd }),
 		);
 
-		await preparePatchDirectory(sourceRoot);
+		await preparePatchDirectory(sourceRoot, true);
 		const entries = await readIncludes(sourceRoot);
 
 		const snapshot = await createSnapshot({
@@ -287,7 +287,7 @@ export function createWorktreeMetadata({
 		patchPath: path.join(
 			parentRoot,
 			PATCH_DIRECTORY,
-			`${path.basename(worktreeRoot)}.patch`,
+			`worktree-${path.basename(worktreeRoot)}.patch`,
 		),
 	};
 }
@@ -358,7 +358,10 @@ export function getWorktreeState(
 	return { kind: "worktree", metadata };
 }
 
-async function preparePatchDirectory(parentRoot: string): Promise<void> {
+export async function preparePatchDirectory(
+	parentRoot: string,
+	exclude: boolean,
+): Promise<string> {
 	if ((await realpath(parentRoot)) !== parentRoot) {
 		throw new Error(
 			"The parent checkout path differs from its canonical path.",
@@ -381,10 +384,11 @@ async function preparePatchDirectory(parentRoot: string): Promise<void> {
 		throw new Error("The patch directory must not be a symbolic link.");
 	}
 
-	await gitAddExcludeRule(`/${PATCH_DIRECTORY}/`, parentRoot);
+	if (exclude) await gitAddExcludeRule(`/${PATCH_DIRECTORY}/`, parentRoot);
+	return directory;
 }
 
-async function writeFileAtomic(
+export async function writeFileAtomic(
 	file: string,
 	content: string | Buffer,
 ): Promise<void> {
@@ -423,7 +427,7 @@ export async function exportWorktreePatch(
 		throw new Error("The worktree path differs from its canonical path.");
 	}
 
-	await preparePatchDirectory(metadata.parentRoot);
+	await preparePatchDirectory(metadata.parentRoot, true);
 
 	// An aborted turn still exports its partial edits, without its aborted signal.
 	const snapshot = await createSnapshot({
