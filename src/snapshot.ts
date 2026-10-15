@@ -140,7 +140,8 @@ export default function turnSnapshot(pi: ExtensionAPI): void {
 
 		const result = await createSnapshot({
 			cwd: ctx.cwd,
-			description: event.prompt,
+			description:
+				event.messageType === "user" ? event.prompt : event.message.customType,
 			signal: ctx.signal,
 		});
 		if (!result.ok) {
@@ -370,8 +371,6 @@ async function runReview(
 	// Advance the review baseline only after a completed review. An aborted review
 	// leaves the delta intact for a restart.
 	state.reviewInProgress = live.snapshot;
-	// `sendMessage` triggers an agent response without `before_agent_start`.
-	// Do not suppress the next user prompt's inter-turn notice.
 	pi.sendMessage(
 		{ customType: "snapshot", content: notice, display: true },
 		{ triggerTurn: true },

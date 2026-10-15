@@ -97,10 +97,9 @@ export default function branchGuard(pi: ExtensionAPI): void {
 		return { action: "handled" };
 	});
 
-	// Record the branch for the turn that is about to run. Append only on change
-	// so a run of turns on one branch leaves a single entry per switch. The
-	// mismatch warning already fired in the input hook.
-	pi.on("before_agent_start", async (_event, ctx) => {
+	// Custom runs must not acknowledge a branch switch before the input guard.
+	pi.on("before_agent_start", async (event, ctx) => {
+		if (event.messageType !== "user") return;
 		const current = await currentBranch(ctx.cwd, ctx.signal);
 		if (current === undefined) return;
 		if (lastRecordedBranch(ctx) === current) return;

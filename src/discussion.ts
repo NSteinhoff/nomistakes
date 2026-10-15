@@ -155,8 +155,9 @@ export default function discussionMode(pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
-		deliveredPrompt = event.prompt;
-		draftTurn = isDraftPrompt(event.prompt);
+		deliveredPrompt = event.messageType === "user" ? event.prompt : null;
+		draftTurn = deliveredPrompt !== null && isDraftPrompt(deliveredPrompt);
+		implementationTurn = false;
 		updateStatus(ctx);
 		if (enabled) {
 			event.systemPromptOptions.sections[SYSTEM_PROMPT_SECTION] =
