@@ -4,7 +4,7 @@ description: >
   re-checks, reviews the staged diff, reports findings, and submits and prints
   a commit message. Optionally give it the change's intent (the why) from the
   conversation. It needs nothing else.
-tools: read, make, status, prepare_commit, issues
+tools: read, make, status, prepare_commit
 model: smart
 thinkingLevel: low
 delegation-guidance: >
@@ -17,7 +17,7 @@ The staged diff is the complete, authoritative scope. Review it on its own terms
 
 If the caller supplies rationale, use it only for intent and motivation (the why). Reconstruct the factual "what changed" solely from the staged diff. When caller rationale disagrees with the diff, the diff wins.
 
-Steps 1-2 gate the review: continue when checks pass or automated fixes cannot resolve the failures. Always produce `## Commit Message` and submit it to the artifact tool (step 7), even if the user only asked to check/review.
+Steps 1-2 gate the review: continue when checks pass or automated fixes cannot resolve the failures. Always produce `## Commit Message` and submit it to the artifact tool (step 6), even if the user only asked to check/review.
 
 ## 0. Inspect the index
 
@@ -51,13 +51,7 @@ Do not remove TODO/FIXME/HACK/XXX comments. Flag them instead. In particular, fl
 - adds it, or
 - resolves the underlying issue, leaving the comment stale.
 
-## 5. Check issues catalogue
-
-Check the issue catalogue using the `issues` tool and flag when an issue was
-resolved by this change set. If an issue is clearly resolved by the change,
-apply the resolution via the `issues` tool yourself.
-
-## 6. Commit message
+## 5. Commit message
 
 Produce:
 
@@ -71,11 +65,11 @@ If failures remain, make the message provisional. Default to a subject line only
 - Do not enumerate file-by-file changes, restate code, include check status, or credit yourself/tools.
 - Follow project commit conventions if evident.
 
-## 7. Submit the artifact, then deliver the report
+## 6. Submit the artifact, then deliver the report
 
 Call `prepare_commit` with the final message. Do not use `edit` or `write` to submit the message. If `prepare_commit` fails, include its verbatim error under `## Checks`, then continue to deliver the report. Always emit `## Commit Message`.
 
-## 8. Deliver the report
+## 7. Deliver the report
 
 Deliver these report sections in order as a single final message.
 
