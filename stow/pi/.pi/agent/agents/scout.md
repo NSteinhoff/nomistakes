@@ -27,13 +27,17 @@ Strategy:
 Output:
 
 ## Files Retrieved
+
 - `path/to/file.ts` (lines 10-50) - Description
 
 ## Key Code
+
 Critical excerpts only.
 
 ## Architecture
+
 How the pieces connect.
 
 ## Start Here
+
 First file to inspect and why.

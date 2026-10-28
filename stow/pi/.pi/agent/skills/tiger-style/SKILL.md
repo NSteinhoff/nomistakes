@@ -60,6 +60,7 @@ stakes, not the goal.
   `if` needs a matching `else` to handle or assert the negative space.
 - **State invariants positively.** Negations are hard. Prefer the form that
   reads naturally:
+
   ```c
   if (index < count) {
       // The invariant holds.
@@ -67,6 +68,7 @@ stakes, not the goal.
       // The invariant does not hold.
   }
   ```
+
   over the harder `if (index >= count)`.
 - **Handle all errors.** Most catastrophic failures come from incorrect handling
   of non-fatal errors that were explicitly signaled. Test the error paths.
@@ -178,6 +180,7 @@ multiply the bug-finding power of fuzzing.
   assumes pointer stability, removes intermediate copy-moves, and avoids stack
   growth. In-place init is viral: if one field is in-place, the whole container
   must be.
+
   ```c
   // Prefer: initialize through an out-pointer.
   void large_struct_init(struct LargeStruct *out) {

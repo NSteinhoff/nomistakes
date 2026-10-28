@@ -12,6 +12,7 @@ description: >
   the definition.
 - Delimit a major source section with a two-line banner: a full-width rule of
   `/` characters, then the section title on a `/// Title` line. For example:
+
   ```
   ///////////////////////////////////////////////////////////////////////////////
   /// SHA-256

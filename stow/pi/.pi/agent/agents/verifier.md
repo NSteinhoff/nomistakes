@@ -62,18 +62,22 @@ Rules:
 Output:
 
 ## Commands Run (full history)
+
 - `make test` → FAIL (exit 1)
 - `make lint` → ok
 
 ## Failures
+
 Verbatim error blocks, one per failing target/check. Preserve original text.
 
 ## Summary
+
 N failures across M targets.
 
 If everything passes, omit `## Failures` and report: `All checks passed.`
 
 ## Unmet Requests
+
 List any requested action that `make` targets cannot perform (for example: a
 single test file, extra arguments, or a direct `node`/`npx` call), with one
 line each that names the missing capability. Omit this section when every request

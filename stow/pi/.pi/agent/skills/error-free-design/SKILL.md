@@ -15,7 +15,7 @@ description: >
 
 # Error-Free Design
 
-Core idea: **an error is not a special kind of thing — it is just data.** Most "error handling" pain does not come from errors being hard, it comes from code being *structured* so that every possible failure doubles the number of codepaths (a check/early-exit/branch per failure point). The fix is not a fancier error-handling feature — it is designing data and APIs so failure and success flow through the *same* code.
+Core idea: **an error is not a special kind of thing — it is just data.** Most "error handling" pain does not come from errors being hard, it comes from code being _structured_ so that every possible failure doubles the number of codepaths (a check/early-exit/branch per failure point). The fix is not a fancier error-handling feature — it is designing data and APIs so failure and success flow through the _same_ code.
 
 Before reaching for a clever error-handling pattern, ask: **can this failure mode be designed away, or absorbed into the normal path, instead of handled?** That question comes before any of the techniques below, and before picking any language-specific mechanism (exceptions, error codes, union types, panics, etc.) to express the ones you cannot avoid.
 
@@ -25,7 +25,7 @@ These techniques are deliberately described independent of any language. Whateve
 
 ### 1. Guarantee valid reads — prefer a valid empty value over absence
 
-The source article uses "nil structs" in place of null pointers, so that reading through a lookup that failed never crashes. The general version: when a lookup can fail, return a valid, inert, empty-shaped value instead of null/nothing/none — *if* the caller's next step is going to be another read.
+The source article uses "nil structs" in place of null pointers, so that reading through a lookup that failed never crashes. The general version: when a lookup can fail, return a valid, inert, empty-shaped value instead of null/nothing/none — _if_ the caller's next step is going to be another read.
 
 Pseudocode:
 
@@ -96,7 +96,7 @@ function submitOrder(input):
     return chargeAndCreateOrder(validated.value, reserved.value)
 ```
 
-Each check happens before the next step commits to anything irreversible. This is not about adding more checks — it is about *ordering* the checks you already need, so the cheap, early ones run before the expensive, hard-to-undo ones.
+Each check happens before the next step commits to anything irreversible. This is not about adding more checks — it is about _ordering_ the checks you already need, so the cheap, early ones run before the expensive, hard-to-undo ones.
 
 ### 4. Prefer fewer types of results — attach error info alongside the value, not instead of it
 
@@ -139,11 +139,11 @@ if parsed.errors is not empty:
 **Pros of the both/and shape:** callers who do not care about the error path (logging, a debug view, best-effort rendering) do not need to branch at all — this is the "codepaths collapse" payoff the whole article is built around. Especially good for things like parsers or batch validators that can produce a partial result alongside error messages.
 **Cons:** it only works when a partial/default value is a coherent thing to return alongside an error (ties back to technique 2 — you need a meaningful empty/default value for that type). If failure genuinely means "there is no value, full stop" — parsing a number from garbage input, a failed network request with nothing to show — fabricating a value does not make sense, and a shape that forces the caller to check before proceeding is the honest choice.
 
-**How to decide, in any language:** use the either/or shape for functions where "no value" is genuinely possible and there is no sensible default to fall back on — let the type system or a required check catch every call site that needs to handle that. Reach for the both/and shape specifically for functions that can *partially* succeed (batch operations, parsers, validators collecting multiple problems), where forcing every caller through a false all-or-nothing branch would itself be the thing generating unnecessary codepaths. Treat this as a per-function decision, not a codebase-wide rule — mixing both is fine as long as each function's shape matches whether "no value" is actually possible for it.
+**How to decide, in any language:** use the either/or shape for functions where "no value" is genuinely possible and there is no sensible default to fall back on — let the type system or a required check catch every call site that needs to handle that. Reach for the both/and shape specifically for functions that can _partially_ succeed (batch operations, parsers, validators collecting multiple problems), where forcing every caller through a false all-or-nothing branch would itself be the thing generating unnecessary codepaths. Treat this as a per-function decision, not a codebase-wide rule — mixing both is fine as long as each function's shape matches whether "no value" is actually possible for it.
 
 ### 5. Accumulate error info in a side-channel log instead of a single mutable slot
 
-The source article's critique of C's `errno` — a single global slot that only holds the *most recent* error and loses where it came from — maps onto any pattern with a single "last error" field on an object or module. Prefer an append-only log when a caller might want to inspect everything that happened, not just the last thing:
+The source article's critique of C's `errno` — a single global slot that only holds the _most recent_ error and loses where it came from — maps onto any pattern with a single "last error" field on an object or module. Prefer an append-only log when a caller might want to inspect everything that happened, not just the last thing:
 
 ```
 DiagnosticLog:
@@ -156,7 +156,7 @@ DiagnosticLog:
         return entries
 ```
 
-Pass a diagnostics log (or return one, per technique 4) through a batch of operations instead of stopping at the first problem or overwriting a single "last error" field. This is most valuable for anything processing a collection — validating many form fields, running a build step across many files — where the point of "error handling" is to *keep going* and report everything at the end, not to stop at the first failure.
+Pass a diagnostics log (or return one, per technique 4) through a batch of operations instead of stopping at the first problem or overwriting a single "last error" field. This is most valuable for anything processing a collection — validating many form fields, running a build step across many files — where the point of "error handling" is to _keep going_ and report everything at the end, not to stop at the first failure.
 
 ## Applying this to a review or a new design
 
