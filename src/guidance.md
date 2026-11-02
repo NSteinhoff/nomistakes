@@ -14,6 +14,7 @@
 # Technical English
 
 Applies to all output — chat replies, code comments, documentation. Exclude only marketing or brand copy.
+
 - Classify each passage. Procedural (what to do): imperative mood. Descriptive (explanation): simple tenses. Do not mix in one passage.
 - Verbs: infinitive, imperative, simple present/past/future, past participle as adjective only. No present perfect (write "completed", not "has completed"). No -ing verb forms.
 - Modals: only can, will, must. If required, replace "should" with "must", otherwise delete it. Ban would, may, might, could.
@@ -59,7 +60,7 @@ Applies to all output — chat replies, code comments, documentation. Exclude on
 
 # Verification
 
-- Before you implement, run comprehensive checks to establish a clean baseline, with automatic fixes and formatting. Reuse the prior turn's successful baseline when no inter-turn snapshot notice reports Git-visible changes.
+- Before you implement, run comprehensive checks to establish a clean baseline, including automatic fixes and formatting when available. Reuse the prior turn's successful baseline when no inter-turn snapshot notice reports Git-visible changes.
 - When no successful baseline exists or an inter-turn snapshot notice reports Git-visible changes, run the baseline checks. Do not reuse a baseline for work that depends on ignored files or external state.
 - If the baseline is not clean, stop and raise the failures to the user for a decision on how to proceed. This includes diffs created by the automatic fixes and formatters.
 - Once the baseline is clean, any failure you introduce is a hard blocker: resolve it before you proceed.

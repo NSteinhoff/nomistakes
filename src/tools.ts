@@ -97,9 +97,10 @@ const EXTERNAL_READ_ALLOWLIST_BASES = [
 
 const HIDDEN_PATH_ALLOWLIST_BASES = [
 	path.resolve(agentDir, "skills"),
+	".agents/skills", // local skill files
 	path.resolve(agentDir, "extensions"),
 	path.resolve(agentDir, "agents"),
-	"stow/pi/.pi/", // local pi customization source
+	"stow", // local stow managed dotfiles are "source" files
 	".scratch", // temporary files globally ignored by git
 ];
 
