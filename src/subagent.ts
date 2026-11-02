@@ -144,7 +144,7 @@ const SubagentParams = Type.Object({
 // requires waiting for delegated execution to settle even when a tool ignores
 // its abort signal.
 const SUBAGENT_TIMEOUT_MS = 30 * 60 * 1000;
-const DISCUSSION_EXTENSION_FILE = "discussion.ts";
+const MAIN_AGENT_EXTENSIONS = new Set(["discussion.ts", "guidance.ts"]);
 
 function getFinalOutput(messages: AgentMessage[]): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
@@ -660,13 +660,12 @@ async function runSubagent({
 			cwd,
 			agentDir,
 			settingsManager,
-			// Discussion mode guides the parent conversation only; delegated agents
-			// execute their assigned tasks without this extension.
+			// Parent policies do not govern delegated roles and workflows.
 			extensionsOverride: (base) => ({
 				...base,
 				extensions: base.extensions.filter(
 					(extension) =>
-						path.basename(extension.resolvedPath) !== DISCUSSION_EXTENSION_FILE,
+						!MAIN_AGENT_EXTENSIONS.has(path.basename(extension.resolvedPath)),
 				),
 			}),
 			appendSystemPromptOverride: (base) =>
