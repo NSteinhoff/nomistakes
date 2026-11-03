@@ -343,12 +343,14 @@ function formatMakeOutcome(outcome: MakeProcessOutcome): string {
 		case "success":
 			return combined || "Success! make completed with no output.";
 		case "failed": {
-			const reason =
-				outcome.exitCode !== null
-					? `make exited with code ${outcome.exitCode}`
-					: outcome.signal
-						? `make terminated by ${outcome.signal}`
-						: "make exited with unknown status";
+			let reason: string;
+			if (outcome.exitCode !== null) {
+				reason = `make exited with code ${outcome.exitCode}`;
+			} else if (outcome.signal) {
+				reason = `make terminated by ${outcome.signal}`;
+			} else {
+				reason = "make exited with unknown status";
+			}
 			return `${reason}:\n${output}`;
 		}
 		case "timed-out":

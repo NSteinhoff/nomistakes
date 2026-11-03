@@ -12,6 +12,7 @@ description: >
 - Separate type-only imports: `import type { X } from "..."`.
 - Prefer explicit return types on exported functions.
 - Use readonly / immutability by default
+- Prefer flat `if / else if / else` chains over nested ternaries. Use `let` for the result when needed. Preserve precedence through branch order.
 - Prefer `type` over `interface`
 - `unknown` at boundaries, never `any`
 - `async/await` over raw promises.

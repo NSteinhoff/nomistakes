@@ -363,12 +363,14 @@ function formatExpandableOutputTextFromEdge(
 		? Math.max(0, renderTruncation.totalLines - visibleLines)
 		: 0;
 	const hidden = hiddenFromPreviewWithinShown + hiddenFromTruncationTail;
-	const hiddenSuffix =
-		hidden > 0
-			? edge === "head"
-				? `${hidden} more lines`
-				: `${hidden} earlier lines`
-			: "more output";
+	let hiddenSuffix: string;
+	if (hidden <= 0) {
+		hiddenSuffix = "more output";
+	} else if (edge === "head") {
+		hiddenSuffix = `${hidden} more lines`;
+	} else {
+		hiddenSuffix = `${hidden} earlier lines`;
+	}
 	const suffixParts = [hiddenSuffix];
 	if (renderTruncation?.truncated) {
 		suffixParts.push(describeTruncation(renderTruncation));

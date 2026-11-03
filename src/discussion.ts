@@ -157,16 +157,17 @@ export default function discussionMode(pi: ExtensionAPI): void {
 	});
 
 	function updateStatus(ctx: ExtensionContext): void {
-		ctx.ui.setStatus(
-			STATUS_ID,
-			draftTurn
-				? ctx.ui.theme.fg("accent", "[📝 DRAFT]")
-				: enabled
-					? implementationTurn
-						? ctx.ui.theme.fg("warning", "[🔧 IMPLEMENTATION]")
-						: ctx.ui.theme.fg("accent", "[💬 DISCUSSION]")
-					: undefined,
-		);
+		let status: string | undefined;
+		if (draftTurn) {
+			status = ctx.ui.theme.fg("accent", "[📝 DRAFT]");
+		} else if (!enabled) {
+			status = undefined;
+		} else if (implementationTurn) {
+			status = ctx.ui.theme.fg("warning", "[🔧 IMPLEMENTATION]");
+		} else {
+			status = ctx.ui.theme.fg("accent", "[💬 DISCUSSION]");
+		}
+		ctx.ui.setStatus(STATUS_ID, status);
 	}
 
 	function toggle(ctx: ExtensionContext): void {
