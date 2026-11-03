@@ -170,7 +170,7 @@ export async function createDraftPatch(
 	cwd: string,
 	name: string,
 	files: readonly PatchFile[],
-): Promise<string> {
+): Promise<{ readonly path: string; readonly text: string }> {
 	const root = await realpath(
 		await gitOutput({ args: ["rev-parse", "--show-toplevel"], cwd }),
 	);
@@ -191,5 +191,5 @@ export async function createDraftPatch(
 		`draft-${name}-${randomUUID()}.patch`,
 	);
 	await writeFileAtomic(destination, patch);
-	return destination;
+	return { path: destination, text: patch };
 }

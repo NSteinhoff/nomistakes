@@ -153,52 +153,55 @@ async function selectIssue(
 	ctx: ExtensionContext,
 	choices: readonly string[],
 ): Promise<IssueSelection | null> {
-	return ctx.ui.custom<IssueSelection | null>((tui, theme, _kb, done) => {
-		const container = new Container();
-		container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
-		container.addChild(new Text(theme.fg("accent", "Select an issue")));
-		const list = new SelectList(
-			choices.map((choice) => ({ value: choice, label: choice })),
-			Math.min(choices.length, ISSUE_SELECTOR_ROWS),
-			{
-				selectedPrefix: (text) => theme.fg("accent", text),
-				selectedText: (text) => theme.fg("accent", text),
-				description: (text) => theme.fg("muted", text),
-				scrollInfo: (text) => theme.fg("dim", text),
-				noMatch: (text) => theme.fg("warning", text),
-			},
-		);
-		list.onSelect = (item) => done({ choice: item.value, newSession: false });
-		list.onCancel = () => done(null);
-		container.addChild(list);
-		container.addChild(
-			new Text(
-				theme.fg(
-					"dim",
-					"↑↓ navigate • enter load • shift+enter new session • esc cancel",
+	return ctx.ui.custom<IssueSelection | null>(
+		(tui, theme, _kb, done) => {
+			const container = new Container();
+			container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+			container.addChild(new Text(theme.fg("accent", "Select an issue")));
+			const list = new SelectList(
+				choices.map((choice) => ({ value: choice, label: choice })),
+				Math.min(choices.length, ISSUE_SELECTOR_ROWS),
+				{
+					selectedPrefix: (text) => theme.fg("accent", text),
+					selectedText: (text) => theme.fg("accent", text),
+					description: (text) => theme.fg("muted", text),
+					scrollInfo: (text) => theme.fg("dim", text),
+					noMatch: (text) => theme.fg("warning", text),
+				},
+			);
+			list.onSelect = (item) => done({ choice: item.value, newSession: false });
+			list.onCancel = () => done(null);
+			container.addChild(list);
+			container.addChild(
+				new Text(
+					theme.fg(
+						"dim",
+						"↑↓ navigate • enter load • shift+enter new session • esc cancel",
+					),
 				),
-			),
-		);
-		container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
-		return {
-			render: (width) => container.render(width),
-			invalidate: () => container.invalidate(),
-			handleInput: (data) => {
-				if (matchesKey(data, Key.shift("enter"))) {
-					const item = list.getSelectedItem();
-					if (item !== null) done({ choice: item.value, newSession: true });
-					return;
-				}
-				if (matchesKey(data, Key.enter)) {
-					const item = list.getSelectedItem();
-					if (item !== null) done({ choice: item.value, newSession: false });
-					return;
-				}
-				list.handleInput(data);
-				tui.requestRender();
-			},
-		};
-	});
+			);
+			container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+			return {
+				render: (width) => container.render(width),
+				invalidate: () => container.invalidate(),
+				handleInput: (data) => {
+					if (matchesKey(data, Key.shift("enter"))) {
+						const item = list.getSelectedItem();
+						if (item !== null) done({ choice: item.value, newSession: true });
+						return;
+					}
+					if (matchesKey(data, Key.enter)) {
+						const item = list.getSelectedItem();
+						if (item !== null) done({ choice: item.value, newSession: false });
+						return;
+					}
+					list.handleInput(data);
+					tui.requestRender();
+				},
+			};
+		},
+		{ blocked: { kind: "question", message: "Select an issue" } },
+	);
 }
 
 export default function (pi: ExtensionAPI) {

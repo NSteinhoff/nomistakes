@@ -8,7 +8,13 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Key } from "@earendil-works/pi-tui";
+import {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	highlightCode,
+	truncateHead,
+} from "@earendil-works/pi-coding-agent";
+import { Key, Text } from "@earendil-works/pi-tui";
 import {
 	createDraftPatch,
 	DRAFT_PREFIX,
@@ -18,6 +24,32 @@ import {
 	patchParameters,
 } from "./utils/draft";
 import { extractMessageText } from "./utils/message-text";
+
+type DraftPatchDetails = {
+	readonly patch: string;
+	readonly preview?: string | undefined;
+	readonly previewTruncated?: boolean | undefined;
+};
+
+class DraftPatchText extends Text {
+	private preview: { readonly source: string; readonly text: string } | null =
+		null;
+
+	formatPreview(source: string): string {
+		if (this.preview?.source !== source) {
+			this.preview = {
+				source,
+				text: highlightCode(source, "diff").join("\n"),
+			};
+		}
+		return this.preview.text;
+	}
+
+	override invalidate(): void {
+		super.invalidate();
+		this.preview = null;
+	}
+}
 
 const STATUS_ID = "discussion";
 const IMPLEMENTATION_TURN_PREFIXES = ["Implement", "Fix"];
@@ -80,7 +112,7 @@ export default function discussionMode(pi: ExtensionAPI): void {
 	let draftTurn = false;
 	let deliveredPrompt: string | null = null;
 
-	pi.registerTool({
+	pi.registerTool<typeof patchParameters, DraftPatchDetails>({
 		name: PATCH_TOOL,
 		label: "Create Patch",
 		description:
@@ -90,10 +122,37 @@ export default function discussionMode(pi: ExtensionAPI): void {
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			if (!draftTurn) throw new Error("Patch creation requires a draft turn.");
 			const patch = await createDraftPatch(ctx.cwd, params.name, params.files);
+			const preview = truncateHead(patch.text, {
+				maxLines: DEFAULT_MAX_LINES,
+				maxBytes: DEFAULT_MAX_BYTES,
+			});
 			return {
-				content: [{ type: "text", text: `Patch: ${patch}` }],
-				details: { patch },
+				content: [{ type: "text", text: `Patch: ${patch.path}` }],
+				details: {
+					patch: patch.path,
+					preview: preview.content,
+					previewTruncated: preview.truncated,
+				},
 			};
+		},
+		renderResult(result, options, theme, context) {
+			const text =
+				(context.lastComponent as DraftPatchText | undefined) ??
+				new DraftPatchText("", 0, 0);
+			let content = extractMessageText(result.content, "\n");
+			const details = result.details;
+			if (details?.preview) {
+				if (options.expanded) {
+					content += `\n\n${text.formatPreview(details.preview)}`;
+					if (details.previewTruncated) {
+						content += `\n${theme.fg("dim", `... (preview truncated; complete patch: ${details.patch})`)}`;
+					}
+				} else {
+					content += ` (${context.keyHint("app.tools.expand", "to expand")})`;
+				}
+			}
+			text.setText(content);
+			return text;
 		},
 	});
 

@@ -18,7 +18,6 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { keyText } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { formatGitFailure, runGit, runGitBytes } from "./utils/git";
@@ -268,7 +267,7 @@ export default function turnSnapshot(pi: ExtensionAPI): void {
 			if (collapsedLabel && !options.expanded) {
 				return new Text(
 					theme.fg("customMessageText", `${collapsedLabel} (`) +
-						theme.fg("dim", keyText("app.tools.expand")) +
+						theme.fg("dim", options.keyText("app.tools.expand")) +
 						theme.fg("customMessageText", " to expand)"),
 					1,
 					1,

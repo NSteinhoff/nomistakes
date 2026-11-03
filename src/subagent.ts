@@ -898,6 +898,9 @@ function aggregateSessionUsage(
 		total.cost.cacheRead += usage.cost.cacheRead;
 		total.cost.cacheWrite += usage.cost.cacheWrite;
 		total.cost.total += usage.cost.total;
+		total.cost.totalFromProvider =
+			total.cost.totalFromProvider === true &&
+			usage.cost.totalFromProvider === true;
 	}
 	return total;
 }
