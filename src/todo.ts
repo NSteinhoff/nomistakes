@@ -8,7 +8,6 @@
  * correct for that point in history.
  */
 
-import { StringEnum } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
@@ -34,7 +33,13 @@ type TodoDetails = {
 };
 
 const TodoParams = Type.Object({
-	action: StringEnum(["list", "add", "complete", "toggle", "clear"] as const),
+	action: Type.Union([
+		Type.Literal("list"),
+		Type.Literal("add"),
+		Type.Literal("complete"),
+		Type.Literal("toggle"),
+		Type.Literal("clear"),
+	]),
 	text: Type.Optional(
 		Type.Union([
 			Type.Array(Type.String({ minLength: 1 }), {

@@ -3,6 +3,8 @@ BIOME ?= biome
 STOW  ?= stow
 CURL  ?= curl
 
+all: check install
+
 install: pre-install
 	$(STOW) -v pi
 .PHONY: install
@@ -46,6 +48,7 @@ PACKAGES := \
 	@earendil-works/pi-agent-core:$(PI_VERSION) \
 	@earendil-works/pi-ai:$(PI_VERSION) \
 	@earendil-works/pi-tui:$(PI_VERSION) \
+	@earendil-works/pi-schema:$(PI_VERSION) \
 	typebox:1.3.27
 
 pkg-name    = $(word 1,$(subst :, ,$1))
