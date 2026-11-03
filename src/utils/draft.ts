@@ -1,8 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { readFile, realpath, stat } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	realpath,
+	rm,
+	stat,
+	writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { Type } from "typebox";
-import { gitOutput } from "./git";
+import { formatGitFailure, gitOutput, runGit } from "./git";
 import {
 	PATCH_DIRECTORY,
 	preparePatchDirectory,
@@ -15,7 +24,6 @@ export const PATCH_TOOL = "create_patch";
 const MAX_FILES = 20;
 const MAX_EDITS = 100;
 const MAX_FILE_BYTES = 1024 * 1024;
-const PATCH_CONTEXT = 3;
 
 export const patchParameters = Type.Object({
 	name: Type.String({ pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$", maxLength: 60 }),
@@ -77,49 +85,45 @@ function replaceText(source: string, edits: PatchFile["edits"]): string {
 	return result + source.slice(cursor);
 }
 
-function diffLines(text: string): string[] {
-	const lines = text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
-	return lines;
-}
-
-function patchLine(prefix: string, line: string): string {
-	return `${prefix}${line}${line.endsWith("\n") ? "" : "\n\\ No newline at end of file\n"}`;
-}
-
-function fileDiff(file: string, source: string, target: string): string {
+async function fileDiff(
+	file: string,
+	source: string,
+	target: string,
+): Promise<string> {
+	if (target.includes("\0"))
+		throw new Error("The proposed text must not contain NUL characters.");
 	if (source === target) return "";
-	const before = diffLines(source);
-	const after = diffLines(target);
-	let prefix = 0;
-	while (
-		prefix < Math.min(before.length, after.length) &&
-		before[prefix] === after[prefix]
-	)
-		prefix++;
-	let suffix = 0;
-	while (
-		suffix < Math.min(before.length, after.length) - prefix &&
-		before[before.length - suffix - 1] === after[after.length - suffix - 1]
-	)
-		suffix++;
-	const start = Math.max(0, prefix - PATCH_CONTEXT);
-	const contextEnd = Math.min(suffix, PATCH_CONTEXT);
-	const beforeEnd = before.length - suffix + contextEnd;
-	const afterEnd = after.length - suffix + contextEnd;
-	const beforeCount = beforeEnd - start;
-	const afterCount = afterEnd - start;
-	const sourcePath = JSON.stringify(`a/${file}`);
-	const targetPath = JSON.stringify(`b/${file}`);
-	let patch = `diff --git ${sourcePath} ${targetPath}\n--- ${sourcePath}\n+++ ${targetPath}\n`;
-	patch += `@@ -${beforeCount === 0 ? start : start + 1},${beforeCount} +${afterCount === 0 ? start : start + 1},${afterCount} @@\n`;
-	for (const line of before.slice(start, prefix)) patch += patchLine(" ", line);
-	for (const line of before.slice(prefix, before.length - suffix))
-		patch += patchLine("-", line);
-	for (const line of after.slice(prefix, after.length - suffix))
-		patch += patchLine("+", line);
-	for (const line of before.slice(before.length - suffix, beforeEnd))
-		patch += patchLine(" ", line);
-	return patch;
+	const directory = await mkdtemp(path.join(tmpdir(), "pi-draft-"));
+	try {
+		const sourcePath = `a/${file}`;
+		const targetPath = `b/${file}`;
+		for (const filePath of [sourcePath, targetPath]) {
+			await mkdir(path.dirname(path.join(directory, filePath)), {
+				recursive: true,
+			});
+		}
+		await writeFile(path.join(directory, sourcePath), source);
+		await writeFile(path.join(directory, targetPath), target);
+		const args = [
+			"diff",
+			"--no-index",
+			"--minimal",
+			"--no-prefix",
+			"--no-ext-diff",
+			"--no-textconv",
+			"--no-color",
+			"--",
+			sourcePath,
+			targetPath,
+		];
+		const result = await runGit({ args, cwd: directory });
+		if (result.exitCode !== 0 && result.exitCode !== 1) {
+			throw new Error(formatGitFailure(args.join(" "), result));
+		}
+		return result.stdout;
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
 }
 
 async function readSource(root: string, file: string): Promise<string> {
@@ -182,7 +186,7 @@ export async function createDraftPatch(
 		seen.add(file.path);
 		const relative = path.relative(root, path.resolve(cwd, file.path));
 		const source = await readSource(root, relative);
-		patch += fileDiff(relative, source, replaceText(source, file.edits));
+		patch += await fileDiff(relative, source, replaceText(source, file.edits));
 	}
 	if (patch === "") throw new Error("The proposal contains no changes.");
 	const directory = await preparePatchDirectory(root, false);
