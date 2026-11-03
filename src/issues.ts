@@ -27,6 +27,8 @@ import {
 
 type ToolDetails = ExpandableOutputDetails;
 
+export const ISSUES_TOOL_NAME = "issues";
+
 const ACTIONS = ["context", "apply"] as const;
 type Action = (typeof ACTIONS)[number];
 
@@ -332,13 +334,17 @@ export default function (pi: ExtensionAPI) {
 			);
 		},
 	});
+}
 
+/** Register only in the curator session, never in the parent session. */
+export function registerIssuesTool(pi: ExtensionAPI): void {
 	pi.registerTool<typeof parameters, ToolDetails>({
-		name: "issues",
+		name: ISSUES_TOOL_NAME,
+		exposure: "model-only",
 		label: "Issues",
 		description: DESCRIPTION.join(" "),
 		promptGuidelines: [
-			"Use issues directly to record, update, or remove established findings. Curator delegation is optional and serves repository analysis.",
+			"Use this tool to record, update, or remove established findings.",
 			"Catalog maintenance is administrative state, like todo updates, not source implementation. It requires no implementation authorization, baseline checks, builds, formatters, or post-change verification.",
 			"If an issues operation fails validation, correct the request and retry. Do not edit catalog files manually.",
 		],

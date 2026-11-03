@@ -58,6 +58,7 @@ import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
+import { ISSUES_TOOL_NAME, registerIssuesTool } from "./issues";
 import { errorMessage } from "./utils/error-message";
 import { extractMessageText } from "./utils/message-text";
 import {
@@ -145,6 +146,7 @@ const SubagentParams = Type.Object({
 // its abort signal.
 const SUBAGENT_TIMEOUT_MS = 30 * 60 * 1000;
 const MAIN_AGENT_EXTENSIONS = new Set(["discussion.ts", "guidance.ts"]);
+const ISSUE_CURATOR_NAME = "issue-curator";
 
 function getFinalOutput(messages: AgentMessage[]): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
@@ -531,7 +533,7 @@ async function runSubagent({
 	}
 
 	const { tools, unavailableTools, nestedSubagentRequested } =
-		resolveAgentTools(agent.tools, activeTools);
+		resolveAgentTools(agent, activeTools);
 	if (nestedSubagentRequested) {
 		return {
 			agent: agentName,
@@ -660,6 +662,8 @@ async function runSubagent({
 			cwd,
 			agentDir,
 			settingsManager,
+			extensionFactories:
+				agent.name === ISSUE_CURATOR_NAME ? [registerIssuesTool] : [],
 			// Parent policies do not govern delegated roles and workflows.
 			extensionsOverride: (base) => ({
 				...base,
@@ -1209,14 +1213,20 @@ function formatAgent(agent: AgentConfig): string {
 }
 
 function resolveAgentTools(
-	agentTools: string[] | undefined,
+	agent: AgentConfig | undefined,
 	activeTools: string[],
 ): {
 	tools: string[];
 	unavailableTools: string[];
 	nestedSubagentRequested: boolean;
 } {
-	const allowedActive = activeTools.filter((tool) => tool !== "delegate");
+	const allowedActive = activeTools.filter(
+		(tool) => tool !== "delegate" && tool !== ISSUES_TOOL_NAME,
+	);
+	if (agent?.name === ISSUE_CURATOR_NAME) {
+		allowedActive.push(ISSUES_TOOL_NAME);
+	}
+	const agentTools = agent?.tools;
 	if (agentTools === undefined) {
 		return {
 			tools: allowedActive,
@@ -1365,7 +1375,7 @@ export default function (pi: ExtensionAPI) {
 			const agentName = typeof args.agent === "string" ? args.agent : "...";
 			const agent = discoveredAgents.find((entry) => entry.name === agentName);
 			const { unavailableTools, nestedSubagentRequested } = resolveAgentTools(
-				agent?.tools,
+				agent,
 				pi.getActiveTools(),
 			);
 			const warnings = [

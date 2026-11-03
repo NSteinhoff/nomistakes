@@ -40,6 +40,9 @@ require approval unless an explicit exception permits access.
 
 ## Issue sessions
 
+Only the issue curator receives the catalog tool. The main agent and other
+roles have no direct or nested access to it. Slash commands retain catalog access.
+
 Use `/issues` to display a compact list of open issues in catalog order without
 an agent turn or a session change.
 

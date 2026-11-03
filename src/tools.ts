@@ -16,6 +16,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { DeleteFileToolInput, MoveFileToolInput } from "./file";
+import { ISSUES_TOOL_NAME } from "./issues";
 import type { PatchFile } from "./utils/draft";
 import { PATCH_TOOL } from "./utils/draft";
 import { errorMessage } from "./utils/error-message";
@@ -40,7 +41,7 @@ const ALLOWED_TOOLS = [
 	"delegate",
 	"status",
 	"git_index_track",
-	"issues",
+	ISSUES_TOOL_NAME,
 	"snapshot",
 	"todo",
 	"prepare_commit",
