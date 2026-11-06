@@ -23,7 +23,7 @@ import {
 
 const DESCRIPTION = [
 	"Read-only git inspection for coding-agent workflows. Replaces direct git status/diff/log/show.",
-	"Use for pre-task reconnaissance and planning: start with overview, then drill down with diff, log, or show. Do not use view=status.",
+	"Use for pre-task reconnaissance and planning: start with overview, then drill down with diff, log, or show. For a self-contained snapshot review request, use the supplied context directly. Request an overview only if branch or index state matters to a specific finding. Do not use view=status.",
 	"Views: overview reports branch/upstream, pending files, tags, and recent commits. The diff view shows unstaged, staged, or base..head patches/stat. The log view lists commits with optional filters/patches. The show view renders one revision.",
 	"Only non-destructive local git commands run. Patch-heavy output is truncated with the complete result recoverable via the reported spill file. Use pattern for exhaustive diff searches.",
 	'Examples: {}; {"view":"diff","staged":true}; {"view":"diff","base":"HEAD~3","head":"HEAD","stat":true}; {"view":"log","grep":"fix","patch":true}; {"view":"show","rev":"HEAD~1","path":"src/file.ts"}.',

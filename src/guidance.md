@@ -27,8 +27,8 @@
 
 - Use the snapshot tool for your own turn's changes.
 - The snapshot tool captures the working tree at each turn's start and end. When the user edits files between turns, a `snapshot` notice that describes the changed files is injected automatically at turn start.
-- Acknowledge inter-turn change notices before you proceed.
-- Run the `status` overview at turn start for branch, pending files, and recent commits when the task needs repository context.
+- Acknowledge inter-turn change notices before you proceed. A self-contained snapshot review request already acknowledges the edits that it covers.
+- Run the `status` overview at turn start for branch, pending files, and recent commits when the task needs repository context. For a self-contained snapshot review request, use the supplied context directly. Request an overview only if branch or index state matters to a specific finding.
 - Use snapshot `diff` for self-review of your own turn's changes. It is the reference for Verification checks.
 
 # Operating Mode

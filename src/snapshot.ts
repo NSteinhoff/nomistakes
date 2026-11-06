@@ -92,6 +92,10 @@ const SNAPSHOT_RENDER_MAX_LINES = 32;
 // expanded. Messages without it keep the default multi-line preview.
 type SnapshotMessageDetails = {
 	readonly collapsedLabel?: string;
+	readonly review?: {
+		readonly baseline: Snapshot;
+		readonly target: Snapshot;
+	};
 };
 
 const toolParameters = Type.Object({
@@ -151,10 +155,15 @@ export default function turnSnapshot(pi: ExtensionAPI): void {
 		state.turnStartSnapshot = result.snapshot;
 		state.lastError = undefined;
 
+		const reviewTarget =
+			event.messageType === "custom" && event.message.customType === "snapshot"
+				? getReviewTarget(event.message.details)
+				: undefined;
 		const notice = await buildInterTurnNotice(
-			previousTurnEnd,
+			reviewTarget ?? previousTurnEnd,
 			result.snapshot,
 			ctx.signal,
+			reviewTarget === undefined ? "turn-end" : "review-request",
 		);
 		if (notice) {
 			return {
@@ -371,7 +380,14 @@ async function runReview(
 	// leaves the delta intact for a restart.
 	state.reviewInProgress = live.snapshot;
 	pi.sendMessage(
-		{ customType: "snapshot", content: notice, display: true },
+		{
+			customType: "snapshot",
+			content: notice,
+			display: true,
+			details: {
+				review: { baseline, target: live.snapshot },
+			} satisfies SnapshotMessageDetails,
+		},
 		{ triggerTurn: true },
 	);
 }
@@ -541,26 +557,51 @@ async function executeAction(
 	}
 }
 
-// Builds the invisible turn-start notice describing user edits made between the
-// previous turn's end and this turn's start. Change detection compares tree
-// hashes by string equality, so it holds even if the objects were pruned. The
-// diff detail dereferences the previous commit and therefore degrades
-// gracefully when git has garbage-collected it.
+function getReviewTarget(details: unknown): Snapshot | undefined {
+	if (
+		typeof details !== "object" ||
+		details === null ||
+		!("review" in details)
+	) {
+		return undefined;
+	}
+	const review = details.review;
+	if (
+		typeof review !== "object" ||
+		review === null ||
+		!("baseline" in review) ||
+		!isSnapshot(review.baseline) ||
+		!("target" in review) ||
+		!isSnapshot(review.target)
+	) {
+		return undefined;
+	}
+	return review.target;
+}
+
+// Tree equality suppresses duplicate notices even if Git prunes snapshot objects.
 async function buildInterTurnNotice(
 	previous: Snapshot | undefined,
 	current: Snapshot,
 	signal?: AbortSignal,
+	origin: "turn-end" | "review-request" = "turn-end",
 ): Promise<string | undefined> {
 	if (!previous) return undefined;
 	if (previous.repoRoot !== current.repoRoot) return undefined;
 	if (previous.tree === current.tree) return undefined;
 
 	const lines = [
-		"Inter-turn change detected: Git-visible working-tree content (tracked files plus non-ignored untracked files) changed between the end of the previous turn and the start of this turn, i.e. user edits made while the agent was idle.",
-		`Previous turn-end snapshot: ${previous.commit}`,
+		origin === "review-request"
+			? "Additional user edits after the review request: the changes below are outside the requested review range. Review only the range in the review request."
+			: "Inter-turn change detected: Git-visible working-tree content (tracked files plus non-ignored untracked files) changed between the end of the previous turn and the start of this turn, i.e. user edits made while the agent was idle.",
+		origin === "review-request"
+			? `Review target snapshot: ${previous.commit}`
+			: `Previous turn-end snapshot: ${previous.commit}`,
 		`Current turn-start snapshot: ${current.commit}`,
 		"Ignored files are outside snapshots and are not covered by this notice.",
-		"Treat the current Git-visible working-tree content as the baseline. Re-read affected files before relying on earlier context.",
+		origin === "review-request"
+			? "Live files differ from the review target. Use status show at the review target snapshot to inspect the requested content."
+			: "Treat the current Git-visible working-tree content as the baseline. Re-read affected files before relying on earlier context.",
 	];
 
 	const section = await buildSnapshotDiffSection(previous, current, signal);
@@ -572,9 +613,7 @@ async function buildInterTurnNotice(
 	return lines.join("\n");
 }
 
-// Builds the visible /review notice describing user edits accumulated since
-// reviewBaseline. Unlike the awareness notice it always renders (the command
-// already confirmed a delta) and steers the agent to a read-only defect review.
+// Keep the review directive and its authoritative patch in one message.
 async function buildReviewNotice(
 	baseline: Snapshot | undefined,
 	current: Snapshot,
@@ -587,10 +626,14 @@ async function buildReviewNotice(
 
 	const lines = [
 		"Requested user-edit review: the Git-visible changes below accumulated since the last agent edit or review and are the review target.",
+		`Repository: ${current.repoRoot}`,
 		`Review baseline:  ${baseline.commit}`,
 		`Current snapshot: ${current.commit}`,
+		"The supplied snapshot range is authoritative. It is independent of staged and unstaged changes. This request includes and acknowledges the inter-turn edits through the current snapshot. No separate acknowledgment is necessary.",
 		"Ignored files are outside snapshots and excluded.",
 		"Perform a defect review of these edits (correctness, regressions, security, and inconsistencies) and report findings concisely. This is read-only. Do not modify files. Do not delegate.",
+		"Use the supplied review context directly. Do not request a status overview unless branch or index state matters to a specific finding. Do not use snapshot diff, which compares changes from this turn rather than the review range.",
+		"If the patch is truncated, read the full patch from the supplied spill file. Read relevant source and applicable skills as needed. If live files differ from the review target, use status show at the current snapshot for the target content.",
 	];
 
 	if (baseline.tree === current.tree) {
@@ -598,10 +641,7 @@ async function buildReviewNotice(
 		return lines.join("\n");
 	}
 	const section = await buildSnapshotDiffSection(baseline, current, signal);
-	if (!section.available) {
-		lines.push("", `Diff detail unavailable: ${section.reason}`);
-		return lines.join("\n");
-	}
+	if (!section.available) return undefined;
 	appendDiffSection(lines, section);
 	return lines.join("\n");
 }
