@@ -1,11 +1,10 @@
 ---
 name: tiger-style
 description: >
-  TigerStyle coding conventions for safety, performance, and developer
-  experience. Use before you review, design, or edit code where these
-  disciplines apply — assertions, static allocation, bounded loops, naming,
-  off-by-one hazards, and back-of-the-envelope performance. Language-agnostic.
-  Examples are C.
+  Explicit TigerStyle profile for safety, performance, and developer
+  experience. Applies strict constraints on allocation, control flow,
+  assertions, dependencies, and code structure.
+disable-model-invocation: true
 ---
 
 # TigerStyle
