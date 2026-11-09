@@ -103,6 +103,7 @@ const HIDDEN_PATH_ALLOWLIST_BASES = [
 	path.resolve(agentDir, "agents"),
 	"stow", // local stow managed dotfiles are "source" files
 	".scratch", // temporary files globally ignored by git
+	".patches", // agent authored patch files
 ];
 
 // Hidden files (relative to cwd) that are explicitly writable without approval,
