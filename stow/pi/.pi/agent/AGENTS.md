@@ -18,11 +18,17 @@
 ## Testing
 
 - Execute relevant checks post-modification
-- Once implementation is authorized, if a test framework exists, apply TDD for behavior under test where it makes sense:
+- Treat each new test case as a maintenance cost. A code change does not itself require a new test.
+- Prefer existing coverage. Add a case only for a distinct observable contract or a demonstrated defect that existing tests do not cover.
+- Before you add a case, identify the behavior it protects and why existing coverage is insufficient. Make this decision without a separate approval request.
+- Test observable behavior, not private helpers, internal call sequences, or code structure.
+- Keep each test readable in isolation, with a clear setup, action, and expected result.
+- Prefer explicit inputs and assertions over abstractions that obscure intent. Avoid elaborate fixtures, excessive mocks, and parameterization that makes cases hard to follow.
+- Once implementation is authorized, if a test framework exists and a new or revised test is justified, apply TDD:
   1. Update tests
   2. Confirm failure
   3. Fix implementation
-  4. Confirm passing
+  4. Confirm success
 - If checks reveal a preexisting failure, stop and report it to the caller for a decision before implementation.
 - Resolve any regression that you introduce before other work.
 
