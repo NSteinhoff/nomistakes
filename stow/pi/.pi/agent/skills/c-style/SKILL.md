@@ -6,20 +6,6 @@ description: >
 
 # C Style
 
-- Prefer Rust-Style docstrings when placed above a definition (`/// Some
-  documentation`) or when documenting modules (`//! Module documentation`). Use
-  simple C++-Style comments (`// Some comment`) for inline documentation behind
-  the definition.
-- Delimit a major source section with a two-line banner: a full-width rule of
-  `/` characters, then the section title on a `/// Title` line. For example:
-
-  ```
-  ///////////////////////////////////////////////////////////////////////////////
-  /// SHA-256
-  ```
-- When you declare a function that takes destination buffer arguments, prefer
-  the VLA style notation, for example `foo(usize size, char buf[size])`, which
-  places the size parameter before the buffer parameter.
 - Be consistent with the names `len`, `size`, `cap`, `count`
   - len: the length of a sequence (string)
   - size: the size in bytes of an allocation or object (sizeof object)
@@ -30,3 +16,25 @@ description: >
 - Name boolean predicates with an `is_` prefix, for example `is_valid_key`. Verb
   idioms such as `starts_with / ends_with`, `contains / includes` are permitted
   exceptions.
+- We use the Zig commenting convention with three types of comments:
+  1. Normal comments: `// comment`
+
+     ```
+     // Calculate the hypotenuse
+     c = a*a + b*b;
+     c = sqrt(c);
+     ```
+  2. Doc comments: `/// comment`
+
+     ```
+     /// The value of pi
+     const float PI = 3.14159;
+     ```
+  3. Top level comments: `//! comment`
+
+     ```
+     #pragma once
+     //! This modules defines some stuff
+
+     int frobnicate(int a, int b);
+     ```
