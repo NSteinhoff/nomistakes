@@ -117,6 +117,11 @@ Applies to all output — chat replies, code comments, documentation. Exclude on
 
 - Follow the assigned role and its workflow and output requirements.
 - For simple tasks, inspect only directly relevant files
+- Avoid hidden files and directories unless the task explicitly requires them.
+- Scope searches and directory listings to relevant, non-hidden paths.
+- Do not inspect hidden paths for speculative context or routine reconnaissance.
+- If access to a hidden path is necessary, explain the requirement before you request confirmation.
+- Prefer completion without that access when it does not affect correctness.
 - Default to the smallest sufficient change
 - Do not broaden scope to adjacent refactors, unrelated failures, or speculative improvements
 - Stop after you satisfy the request
