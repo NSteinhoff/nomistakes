@@ -3,18 +3,14 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const MODEL_TIERS = {
 	anthropic: {
-		fast: "claude-haiku-4-5",
-		smart: "claude-sonnet-5-5",
-		ultra: "claude-opus-5-5",
+		fast: "claude-haiku-5-5",
+		smart: "claude-opus-5-5",
+		ultra: "claude-fable-5-2",
 	},
 	"openai-codex": {
 		fast: "gpt-6-luna",
-		smart: "gpt-6.1-sol",
-		ultra: "gpt-6-astra",
-	},
-	together: {
-		fast: "zai-org/GLM-5.3-Flash",
-		smart: "zai-org/GLM-5.3",
+		smart: "gpt-6.2-sol",
+		ultra: "gpt-6.2-astra",
 	},
 } as const;
 
