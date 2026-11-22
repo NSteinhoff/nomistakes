@@ -116,7 +116,7 @@ export default function discussionMode(pi: ExtensionAPI): void {
 		name: PATCH_TOOL,
 		label: "Create Patch",
 		description:
-			"Create a unified patch from unique, non-overlapping exact replacements in original text files. Source files remain unchanged. Available only for draft turns.",
+			"Create or replace a unified patch from unique, non-overlapping exact replacements in original text files. Source files remain unchanged. Available only for draft turns.",
 		parameters: patchParameters,
 		executionMode: "sequential",
 		async execute(_id, params, _signal, _onUpdate, ctx) {

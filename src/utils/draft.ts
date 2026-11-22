@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+	lstat,
 	mkdir,
 	mkdtemp,
 	readFile,
@@ -24,9 +25,22 @@ export const PATCH_TOOL = "create_patch";
 const MAX_FILES = 20;
 const MAX_EDITS = 100;
 const MAX_FILE_BYTES = 1024 * 1024;
+const MAX_DRAFT_NAME_LENGTH = 60;
+const DRAFT_SLUG = "[a-z0-9]+(?:-[a-z0-9]+)*";
+const DRAFT_SLUG_PATTERN = new RegExp(`^${DRAFT_SLUG}$`);
+const DRAFT_FILE_PREFIX = "draft-";
+const DRAFT_FILE_EXTENSION = ".patch";
+const UUID_V4_PATTERN =
+	"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+const DRAFT_FILE_PATTERN = new RegExp(
+	`^${DRAFT_FILE_PREFIX}(${DRAFT_SLUG})-${UUID_V4_PATTERN}\\${DRAFT_FILE_EXTENSION}$`,
+);
 
 export const patchParameters = Type.Object({
-	name: Type.String({ pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$", maxLength: 60 }),
+	name: Type.String({
+		description:
+			"Short lowercase slug for a new draft, or the exact absolute path returned by this tool to replace a draft.",
+	}),
 	files: Type.Array(
 		Type.Object({
 			path: Type.String({
@@ -169,7 +183,29 @@ async function readSource(root: string, file: string): Promise<string> {
 	return text;
 }
 
-/** Create a proposal without source-file or index mutations. */
+function resolveDraftDestination(directory: string, name: string): string {
+	if (name.length <= MAX_DRAFT_NAME_LENGTH && DRAFT_SLUG_PATTERN.test(name)) {
+		return path.join(
+			directory,
+			`${DRAFT_FILE_PREFIX}${name}-${randomUUID()}${DRAFT_FILE_EXTENSION}`,
+		);
+	}
+
+	const basename = path.basename(name);
+	const slug = DRAFT_FILE_PATTERN.exec(basename)?.[1];
+	if (
+		slug === undefined ||
+		slug.length > MAX_DRAFT_NAME_LENGTH ||
+		name !== path.join(directory, basename)
+	) {
+		throw new Error(
+			"Use a short lowercase slug or the exact absolute path of a draft in this repository.",
+		);
+	}
+	return name;
+}
+
+/** Propose edits without source-file or index mutations. */
 export async function createDraftPatch(
 	cwd: string,
 	name: string,
@@ -177,6 +213,10 @@ export async function createDraftPatch(
 ): Promise<{ readonly path: string; readonly text: string }> {
 	const root = await realpath(
 		await gitOutput({ args: ["rev-parse", "--show-toplevel"], cwd }),
+	);
+	const destination = resolveDraftDestination(
+		path.join(root, PATCH_DIRECTORY),
+		name,
 	);
 	const seen = new Set<string>();
 	let patch = "";
@@ -189,11 +229,10 @@ export async function createDraftPatch(
 		patch += await fileDiff(relative, source, replaceText(source, file.edits));
 	}
 	if (patch === "") throw new Error("The proposal contains no changes.");
-	const directory = await preparePatchDirectory(root, false);
-	const destination = path.join(
-		directory,
-		`draft-${name}-${randomUUID()}.patch`,
-	);
+	await preparePatchDirectory(root, false);
+	if (destination === name && !(await lstat(destination)).isFile()) {
+		throw new Error("The draft path must point to a regular file.");
+	}
 	await writeFileAtomic(destination, patch);
 	return { path: destination, text: patch };
 }

@@ -65,6 +65,7 @@ In prose fields, place structural section headings inside fenced code blocks. Cl
 Bad headlines: "Issue with token comparison", "Possible problem in auth code", "The function at line 42 has a bug".
 
 Good headlines:
+
 - "Token comparison uses `==`, allowing type coercion bypass"
 - "Parser indexes `input[0]` without checking length"
 - "README claims O(log n) lookup but implementation is linear"
@@ -72,6 +73,7 @@ Good headlines:
 A prior issue is resolved when the referenced code disappears, the concern is addressed, or nearby code explains why it does not apply. Remove resolved issues explicitly. Do not keep a resolved list.
 
 Prohibitions:
+
 - Do not fix code.
 - Do not ask the developer inside issue documents.
 - Do not use conversational phrasing in issue documents (`I noticed`, `you might`).

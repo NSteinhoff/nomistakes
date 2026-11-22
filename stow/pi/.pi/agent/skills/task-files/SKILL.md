@@ -6,6 +6,7 @@ description: Read and edit the tasks file in the current directory. Use for task
 Use only `./tasks`. Do not search parent directories.
 
 Each entry occupies one line:
+
 - `[ ] text`: open task
 - `[x] text`: completed task
 - `!!! text`: note

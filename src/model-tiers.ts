@@ -1,5 +1,9 @@
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
+import type {
+	ExtensionAPI,
+	ModelRegistry,
+} from "@earendil-works/pi-coding-agent";
 
 const MODEL_TIERS = {
 	anthropic: {
@@ -14,7 +18,7 @@ const MODEL_TIERS = {
 	},
 } as const;
 
-const THINKING_LEVELS: readonly ModelThinkingLevel[] = [
+const STARTUP_THINKING_LEVELS: readonly ModelThinkingLevel[] = [
 	"off",
 	"minimal",
 	"low",
@@ -25,13 +29,28 @@ const THINKING_LEVELS: readonly ModelThinkingLevel[] = [
 ];
 
 export default function (pi: ExtensionAPI): void {
+	// Pi resolves model selections before it emits session_start.
+	registerTiers(pi);
+	pi.on("session_start", (_event, ctx) => {
+		registerTiers(pi, ctx.modelRegistry);
+	});
+}
+
+function registerTiers(pi: ExtensionAPI, registry?: ModelRegistry): void {
 	for (const [provider, tiers] of Object.entries(MODEL_TIERS)) {
 		for (const [tier, modelId] of Object.entries(tiers)) {
+			let thinkingLevels = STARTUP_THINKING_LEVELS;
+			if (registry) {
+				const target = registry.find(provider, modelId);
+				if (!target) continue;
+				thinkingLevels = getSupportedThinkingLevels(target);
+			}
+
 			pi.registerVirtualModel({
 				provider,
 				id: tier,
 				name: tier,
-				thinkingLevels: THINKING_LEVELS,
+				thinkingLevels,
 				route(request, ctx) {
 					const model = ctx.modelRegistry.find(provider, modelId);
 					if (!model) {

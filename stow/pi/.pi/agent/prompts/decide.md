@@ -13,6 +13,7 @@ recommendations raised earlier in the current session. If none can be
 identified, use the `ask` tool to request a scope before you proceed.
 
 For each item:
+
 1. State the question or suggestion clearly.
 2. State how many decisions remain, with the current one counted (for example 3/5).
 3. Present the viable options with concise tradeoffs. Label every option with a

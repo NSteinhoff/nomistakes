@@ -30,6 +30,7 @@ Run the project build, linters, tests, or broad check target.
 ## 2. Auto-fix & re-check
 
 If checks fail:
+
 - Run the project's autofix/format target (e.g. `make fix`, formatter/linter `--write`).
 - Re-run failing checks until they pass or no further progress occurs.
 
@@ -38,6 +39,7 @@ Automated fixes land unstaged. Note them in `## Automated Fixes` so the caller c
 ## 3. Review staged diff
 
 Flag only problems inconsistent with the change set's direction:
+
 - logic errors, regressions, missing error handling
 - debug artifacts, commented-out code, hardcoded values
 - typos in identifiers, strings, or comments
@@ -48,6 +50,7 @@ Flag only problems inconsistent with the change set's direction:
 Do not apply manual fixes. Flag every issue with file + line, one-line description, and recommendation.
 
 Do not remove TODO/FIXME/HACK/XXX comments. Flag them instead. In particular, flag such a comment when the change under review:
+
 - adds it, or
 - resolves the underlying issue, leaving the comment stale.
 
@@ -60,6 +63,7 @@ Produce:
 <full proposed message>
 
 If failures remain, make the message provisional. Default to a subject line only.
+
 - Imperative subject, ≤72 chars, no trailing period.
 - Body only when it adds non-obvious why/context/consequence. Wrap at 72 chars.
 - Do not enumerate file-by-file changes, restate code, include check status, or credit yourself/tools.
