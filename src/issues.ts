@@ -154,12 +154,14 @@ const ISSUE_SELECTOR_ROWS = 10;
 async function selectIssue(
 	ctx: ExtensionContext,
 	choices: readonly string[],
+	mode: "load" | "remove",
 ): Promise<IssueSelection | null> {
+	const title = mode === "load" ? "Select an issue" : "Select an issue to remove";
 	return ctx.ui.custom<IssueSelection | null>(
 		(tui, theme, _kb, done) => {
 			const container = new Container();
 			container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
-			container.addChild(new Text(theme.fg("accent", "Select an issue")));
+			container.addChild(new Text(theme.fg("accent", title)));
 			const list = new SelectList(
 				choices.map((choice) => ({ value: choice, label: choice })),
 				Math.min(choices.length, ISSUE_SELECTOR_ROWS),
@@ -178,7 +180,9 @@ async function selectIssue(
 				new Text(
 					theme.fg(
 						"dim",
-						"↑↓ navigate • enter load • shift+enter new session • esc cancel",
+						mode === "load"
+							? "↑↓ navigate • enter load • shift+enter new session • esc cancel"
+							: "↑↓ navigate • enter select • esc cancel",
 					),
 				),
 			);
@@ -188,8 +192,10 @@ async function selectIssue(
 				invalidate: () => container.invalidate(),
 				handleInput: (data) => {
 					if (matchesKey(data, Key.shift("enter"))) {
-						const item = list.getSelectedItem();
-						if (item !== null) done({ choice: item.value, newSession: true });
+						if (mode === "load") {
+							const item = list.getSelectedItem();
+							if (item !== null) done({ choice: item.value, newSession: true });
+						}
 						return;
 					}
 					if (matchesKey(data, Key.enter)) {
@@ -202,7 +208,7 @@ async function selectIssue(
 				},
 			};
 		},
-		{ blocked: { kind: "question", message: "Select an issue" } },
+		{ blocked: { kind: "question", message: title } },
 	);
 }
 
@@ -213,9 +219,13 @@ export default function (pi: ExtensionAPI) {
 		cwd = ctx.cwd;
 	});
 
-	pi.registerCommand("issue", {
+	const issueCommand = (
+		name: "issue" | "issue-remove",
+	): Parameters<ExtensionAPI["registerCommand"]>[1] => ({
 		description:
-			"Select a catalog issue, optionally by kind, for the current or a child session",
+			name === "issue"
+				? "Select a catalog issue, optionally by kind, for the current or a child session"
+				: "Remove a catalog issue with confirmation, optionally by kind",
 		getArgumentCompletions: async (prefix) => {
 			if (cwd === null) return null;
 			let catalog: Catalog | string;
@@ -237,7 +247,7 @@ export default function (pi: ExtensionAPI) {
 		},
 		handler: async (args, ctx) => {
 			if (ctx.mode !== "tui") {
-				ctx.ui.notify("issue requires interactive mode", "error");
+				ctx.ui.notify(`${name} requires interactive mode`, "error");
 				return;
 			}
 
@@ -279,10 +289,33 @@ export default function (pi: ExtensionAPI) {
 					entry,
 				);
 			}
-			const selected = await selectIssue(ctx, [...choices.keys()]);
+			const mode = name === "issue" ? "load" : "remove";
+			const selected = await selectIssue(ctx, [...choices.keys()], mode);
 			if (selected === null) return;
 			const entry = choices.get(selected.choice);
 			if (entry === undefined) return;
+
+			if (mode === "remove") {
+				const confirmed = await ctx.ui.confirm(
+					"Remove issue?",
+					`${entry.headline} (${entry.id})`,
+				);
+				if (!confirmed) return;
+				if (!ctx.isIdle()) {
+					ctx.ui.notify("Wait for the current turn to finish.", "error");
+					return;
+				}
+				const result = await applyCatalogDelta(ctx.cwd, {
+					action: "apply",
+					remove: [entry.id],
+				});
+				if (result.ok) {
+					ctx.ui.notify(`Removed issue ${entry.id}.`, "info");
+				} else {
+					ctx.ui.notify(result.message, "error");
+				}
+				return;
+			}
 
 			const contextEntry = {
 				customType: "issue-context",
@@ -310,6 +343,9 @@ export default function (pi: ExtensionAPI) {
 			}
 		},
 	});
+
+	pi.registerCommand("issue", issueCommand("issue"));
+	pi.registerCommand("issue-remove", issueCommand("issue-remove"));
 
 	pi.registerCommand("issues", {
 		description: "List open catalog issues",
@@ -377,7 +413,7 @@ const execute = async (
 		case "context":
 			return textResult(await renderContext(worktree, signal));
 		case "apply":
-			return textResult(await renderApply(worktree, params));
+			return textResult((await applyCatalogDelta(worktree, params)).message);
 		default:
 			return textResult(
 				`Unknown action '${params.action ?? ""}'. Supported actions: ${ACTIONS.join(", ")}.`,
@@ -492,21 +528,25 @@ async function renderContext(
 	return lines.join("\n");
 }
 
-async function renderApply(
+async function applyCatalogDelta(
 	worktree: string,
 	params: Static<typeof parameters>,
-): Promise<string> {
+): Promise<{ ok: boolean; message: string }> {
 	const catalog = await loadCatalog(worktree);
-	if (typeof catalog === "string")
-		return `Cannot apply (no files written): ${catalog}`;
+	if (typeof catalog === "string") {
+		return { ok: false, message: `Cannot apply (no files written): ${catalog}` };
+	}
 	const current = catalog.entries;
 	const { entries, violations } = buildDelta(catalog, params);
 	if (violations.length > 0) {
-		return [
-			`Cannot apply: ${violations.length} violation(s) (no files written):`,
-			"",
-			...violations.map((v) => `- ${v}`),
-		].join("\n");
+		return {
+			ok: false,
+			message: [
+				`Cannot apply: ${violations.length} violation(s) (no files written):`,
+				"",
+				...violations.map((v) => `- ${v}`),
+			].join("\n"),
+		};
 	}
 	const changed = entries.filter((entry) => {
 		const previous = current.get(entry.id);
@@ -519,12 +559,15 @@ async function renderApply(
 		buildIndex(entries, new Date().toISOString()),
 	);
 	const updated = changed.filter((entry) => current.has(entry.id)).length;
-	return renderApplySummary(
-		entries,
-		params.add?.length ?? 0,
-		updated,
-		params.remove?.length ?? 0,
-	);
+	return {
+		ok: true,
+		message: renderApplySummary(
+			entries,
+			params.add?.length ?? 0,
+			updated,
+			params.remove?.length ?? 0,
+		),
+	};
 }
 
 function buildDelta(
