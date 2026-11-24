@@ -207,6 +207,7 @@ async function selectIssue(
 }
 
 export default function (pi: ExtensionAPI) {
+	registerIssuesTool(pi);
 	let cwd: string | null = null;
 	pi.on("session_start", (_event, ctx) => {
 		cwd = ctx.cwd;
@@ -336,7 +337,6 @@ export default function (pi: ExtensionAPI) {
 	});
 }
 
-/** Register only in the curator session, never in the parent session. */
 export function registerIssuesTool(pi: ExtensionAPI): void {
 	pi.registerTool<typeof parameters, ToolDetails>({
 		name: ISSUES_TOOL_NAME,

@@ -145,7 +145,11 @@ const SubagentParams = Type.Object({
 // requires waiting for delegated execution to settle even when a tool ignores
 // its abort signal.
 const SUBAGENT_TIMEOUT_MS = 30 * 60 * 1000;
-const MAIN_AGENT_EXTENSIONS = new Set(["discussion.ts", "guidance.ts"]);
+const MAIN_AGENT_EXTENSIONS = new Set([
+	"discussion.ts",
+	"guidance.ts",
+	"issues.ts",
+]);
 const ISSUE_CURATOR_NAME = "issue-curator";
 
 function getFinalOutput(messages: AgentMessage[]): string {
